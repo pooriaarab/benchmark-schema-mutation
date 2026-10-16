@@ -8,6 +8,7 @@ authors:
 version: "0.1.0"
 date-released: 2026-10-16
 license: MIT
+doi: 10.5281/zenodo.23422412
 repository-code: https://github.com/pooriaarab/benchmark-schema-mutation
 url: "https://aibenchmarkindex.com/benchmarks/benchmark-schema-mutation"
 abstract: "Benchmark: does a model call the current tool schema after a migration, not the one it memorized?"
