@@ -19,7 +19,7 @@ npx benchmark-schema-mutation run --model offline --provider mock
 - Tasks: 60
 ```
 
-The mock provider answers half the tasks correctly by design, so 50% is the expected baseline — it proves the wiring, not a model. Real scores below.
+The mock provider answers half the tasks correctly by design, so 50% is the expected baseline — it proves the wiring, not a model. No real-model runs are published yet; see "Run it on a real model".
 
 ## Install
 
@@ -70,7 +70,7 @@ export OPENROUTER_API_KEY=...
 npx benchmark-schema-mutation run --model anthropic/claude-sonnet-4 --provider openrouter
 ```
 
-Any OpenAI-compatible endpoint works too, via `OPENAI_BASE_URL` and `OPENAI_API_KEY`. Reports carry a mean, a bootstrap 95% CI, per-task rows, and token cost. Group rows by `metadata.mutationKind` for the per-kind breakdown; the share of zero rows whose reason says `staleSchemaUsed` is the headline "it used the old schema" rate.
+Any OpenAI-compatible endpoint works too, via `OPENAI_BASE_URL` and `OPENAI_API_KEY`. Reports carry a mean, a bootstrap 95% CI, per-task rows, and token cost. Each row also carries grader `details` (`mutationKind`, `staleSchemaUsed`), and the report carries the headline numbers directly: `perMutationKind` (tasks and passes per mutation kind) and `staleSchemaUsedRate` — the share of rows that used the old schema. The markdown report ends with the same breakdown.
 
 There is no public leaderboard yet — no model runs have been published for this benchmark.
 
