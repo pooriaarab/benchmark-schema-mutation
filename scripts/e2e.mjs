@@ -76,6 +76,100 @@ assert.ok(sequence[1].every((id) => id.startsWith("smh-")) && sequence[3].every(
 assert.equal((await sdk.score(hidden[0].id, { answer: hidden[0].expected }, { tasks: hiddenFile })).score, 1);
 graderPasses.sdk_alternate_tasks = 5;
 
+// --- Visible-information policy --------------------------------------------
+// READERS turn each tool's request sentence into {description: value} pairs,
+// mirroring the property descriptions the base schema uses.
+const READERS = [
+  ["Create an issue", /In (\S+) open a '([^']+)' issue titled '([^']+)' with body '([^']+)', label (\S+), visible to (\w+)/,
+    (m) => ({ "Repository as owner/name": m[1], "Issue kind": m[2], "Issue title": m[3], "Markdown body": m[4], "Label names": [m[5]], "Who can see it": m[6] })],
+  ["Create a payment charge", /Charge customer (\S+) (\d+(?:\.\d+)?) in '([^']+)' for '([^']+)' with (\w+) capture/,
+    (m) => ({ "Customer id": m[1], "Amount in dollars": Number(m[2]), "Settlement currency": m[3], "Statement text": m[4], "Capture mode": m[5] })],
+  ["Post a message", /Post '([^']+)' to (\S+) with attachment (\S+) at '([^']+)' priority for (\w+)/,
+    (m) => ({ "Message text": m[1], "Channel name": m[2], "Attachment URLs": [m[3]], "Delivery priority": m[4], "Who may read it": m[5] })],
+  ["Create a calendar event", /On calendar (\S+) create '([^']+)' starting (\S+) lasting (\d+) minutes with attendees (.+?), status '([^']+)', on the (\w+) calendar/,
+    (m) => ({ "Calendar id": m[1], "Event title": m[2], "ISO 8601 start time": m[3], "Length in minutes": Number(m[4]), "Attendee emails": m[5].split(" and "), "Event status": m[6], "Calendar scope": m[7] })],
+  ["Open a support ticket", /Open a ticket in the '([^']+)' queue for (\S+) titled '([^']+)' saying '([^']+)', tag (\S+), priority '([^']+)'/,
+    (m) => ({ "Routing queue": m[1], "Requester email": m[2], "Ticket subject": m[3], "First comment": m[4], "Tag names": [m[5]], "Ticket priority": m[6] })],
+  ["Send a transactional email", /Email (\S+) subject '([^']+)' body '([^']+)', cc (\S+), '([^']+)' importance, (\w+) audience/,
+    (m) => ({ "Recipient address": m[1], "Subject line": m[2], "Plain text body": m[3], "CC addresses": [m[4]], "Importance flag": m[5], "Recipient class": m[6] })],
+  ["Upload an object", /Upload (\S+) \(([^)]+)\) to bucket (\S+), tags (.+?), '([^']+)' storage, (\w+) acl/,
+    (m) => ({ "Object key": m[1], "MIME type": m[2], "Bucket name": m[3], "Object tags": m[4].split(" and "), "Storage class": m[5], "Access policy": m[6] })],
+  ["Run a keyword search", /Search the '([^']+)' index for '([^']+)', limit (\d+), filter (\S+), scope (\w+)/,
+    (m) => ({ "Index to search": m[1], "Query text": m[2], "Max results": Number(m[3]), "Filter expressions": [m[4]], "Result scope": m[5] })],
+  ["Send a text message", /Text (\S+) from (\S+) saying '([^']+)' with media (\S+), '([^']+)' priority over (\w+)/,
+    (m) => ({ "Recipient number": m[1], "Sender number": m[2], "Message body": m[3], "Media URLs": [m[4]], "Send priority": m[5], "Bearer channel": m[6] })],
+  ["Trigger a deployment", /Deploy (\S+) ref (\S+) with (\d+) replicas to '([^']+)' using a (\w+) strategy; notify (.+?)\./,
+    (m) => ({ "Service name": m[1], "Git ref or tag": m[2], "Replica count": Number(m[3]), "Target environment": m[4], "Rollout strategy": m[5], "Notification channels": m[6].split(" and ") })],
+  ["Update a CRM contact", /Update contact (\S+): email (\S+), phone (\S+), tag (\S+), stage '([^']+)', owner (\w+)/,
+    (m) => ({ "Contact id": m[1], "Email address": m[2], "Phone number": m[3], "Contact tags": [m[4]], "Pipeline stage": m[5], "Owning team": m[6] })],
+  ["Refund a captured payment", /Refund payment (\S+) for \$(\d+(?:\.\d+)?), reason '([^']+)', back to (\w+)/,
+    (m) => ({ "Payment id": m[1], "Amount in dollars": Number(m[2]), "Refund reason": m[3], "Refund destination": m[4] })],
+];
+
+const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function coerceValue(prop, base, request) {
+  const legend = prop.description.match(/Pre-migration values map as: (.+)$/);
+  if (legend) {
+    const map = Object.fromEntries(legend[1].split(",").map((pair) => pair.trim().split(" -> ")));
+    return map[base] ?? base;
+  }
+  if (prop.type === "array") return Array.isArray(base) ? base : [base];
+  if (prop.type === "string") {
+    if (/ISO 8601 duration/.test(prop.description)) return `PT${base}M`;
+    if (Array.isArray(base)) return base.join(",");
+    if (typeof base === "number") {
+      // Money is printed with the exact decimals the schema expects; fall
+      // back to the numeric token in the request that equals the base value.
+      return request.match(/\d+\.\d{2}\b/g)?.find((token) => Number(token) === base)
+        ?? request.match(/\d+(?:\.\d+)?/g)?.find((token) => Number(token) === base)
+        ?? String(base);
+    }
+    return base;
+  }
+  if (prop.type === "integer" || prop.type === "number") {
+    if (/cents/i.test(prop.description)) return Math.round(base * 100);
+    return typeof base === "number" ? base : Number(base);
+  }
+  return base;
+}
+
+// Builds {"name","arguments"} from the prompt alone. A type-changed field
+// keeps neither name nor description, so after matching every other property
+// by description the one leftover property pairs with the one leftover value.
+function solveFromPrompt(prompt) {
+  const tools = JSON.parse(prompt.split("CURRENT TOOLS:\n")[1].split("\n\nUSER REQUEST:")[0]).tools;
+  const request = prompt.split("USER REQUEST:\n")[1].split("\n\nRespond with")[0];
+  const tool = tools.length === 1 ? tools[0] : tools.find((candidate) => {
+    const tag = candidate.description.match(/\((\w+): ([^)]+)\)$/);
+    return tag !== null && new RegExp(`\\b${escapeRe(tag[2])}\\b`).test(request);
+  });
+  assert.ok(tool, "policy found no tool matching the request");
+  const reader = READERS.find(([desc]) => tool.description.startsWith(desc));
+  assert.ok(reader, `policy has no reader for ${tool.description}`);
+  const match = request.match(reader[1]);
+  assert.ok(match, `policy cannot parse request: ${request}`);
+  const base = reader[2](match);
+  const added = {};
+  for (const clause of request.matchAll(/New required field '(\w+)': set it to (.+?)\.(?=\s|$)/g)) added[clause[1]] = JSON.parse(clause[2]);
+  const args = {};
+  const used = new Set();
+  const pending = [];
+  for (const [name, prop] of Object.entries(tool.parameters.properties)) {
+    if (name in added) { args[name] = added[name]; continue; }
+    const desc = Object.keys(base).find((d) => prop.description === d || prop.description.startsWith(`${d}.`));
+    if (desc === undefined) pending.push([name, prop]);
+    else { args[name] = coerceValue(prop, base[desc], request); used.add(desc); }
+  }
+  const leftover = Object.keys(base).filter((d) => !used.has(d));
+  // A type change leaves one unmatched prop and one unmatched base value; a
+  // split endpoint leaves only the removed field's value. Anything else is a
+  // shape the policy cannot solve.
+  assert.ok(pending.length <= 1 && leftover.length >= pending.length, `policy cannot pair ${pending.length} renamed fields with ${leftover.length} values`);
+  pending.forEach(([name, prop], i) => { args[name] = coerceValue(prop, base[leftover[i]], request); });
+  return JSON.stringify({ name: tool.name, arguments: args });
+}
+
 const probe = createNetServer();
 await new Promise((resolve) => probe.listen(0, "127.0.0.1", resolve));
 const address = probe.address(); assert.ok(address && typeof address === "object");
@@ -212,6 +306,22 @@ try {
   commaCall.arguments[commaKey] = commaCall.arguments[commaKey].split(",").join(", ");
   assert.equal((await postScore(commaTask.id, { answer: JSON.stringify(commaCall) })).value.score, 1);
   graderPasses.comma_list_spacing = 1;
+
+  // Visible-information pass: the prompt-only policy must solve every task on
+  // both splits; a miss means the request withholds a value the answer needs.
+  let solvedPublic = 0;
+  for (const task of tasks) {
+    const result = await postScore(task.id, { answer: solveFromPrompt(task.prompt) });
+    if (result.value.score === 1) solvedPublic += 1;
+  }
+  let solvedHidden = 0;
+  for (const task of hidden) {
+    const result = await postScore(task.id, { answer: solveFromPrompt(task.prompt) }, hiddenAbs);
+    if (result.value.score === 1) solvedHidden += 1;
+  }
+  graderPasses.visible_info_solved = `${solvedPublic}/${tasks.length} public, ${solvedHidden}/${hidden.length} hidden`;
+  assert.equal(solvedPublic, tasks.length, "public tasks unsolvable from the visible prompt");
+  assert.equal(solvedHidden, hidden.length, "hidden tasks unsolvable from the visible prompt");
 } finally { if (server.exitCode === null) { server.kill("SIGTERM"); await once(server, "exit"); } }
 
 // Duration pass: no public task carries a duration argument, so grade a

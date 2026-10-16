@@ -71,7 +71,7 @@ const TOOLS = [
       capture: pick(r, ["auto", "manual"]),
       description: `Order ${int(r, 100, 999)}`,
     }),
-    ask: (c, w = {}) => `Charge customer ${c.customer} ${c.amount} in '${w.currency ?? c.currency}' for '${c.description}' with ${w.capture ?? c.capture} capture.`,
+    ask: (c, w = {}) => `Charge customer ${c.customer} ${c.amount.toFixed(2)} in '${w.currency ?? c.currency}' for '${c.description}' with ${w.capture ?? c.capture} capture.`,
     call: (c) => ({ customer: c.customer, amount: c.amount, currency: c.currency, capture: c.capture, description: c.description }),
     ops: {
       renamedField: [
@@ -439,7 +439,7 @@ const TOOLS = [
       reason: pick(r, ["duplicate", "fraud", "requested"]),
       method: pick(r, ["card", "balance"]),
     }),
-    ask: (c, w = {}) => `Refund payment ${c.payment} for $${c.amount}, reason '${w.reason ?? c.reason}', back to ${w.method ?? c.method}.`,
+    ask: (c, w = {}) => `Refund payment ${c.payment} for $${c.amount.toFixed(2)}, reason '${w.reason ?? c.reason}', back to ${w.method ?? c.method}.`,
     call: (c) => ({ payment_id: c.payment, amount: c.amount, reason: c.reason, method: c.method }),
     ops: {
       renamedField: [
