@@ -29,15 +29,61 @@ async function get(path) {
   const response = await fetch(`${base}${path}`); routes[`GET ${path}`] = response.status;
   return { response, value: await response.json() };
 }
+async function postScore(taskId, submission) {
+  const response = await fetch(`${base}/v1/score`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskId, submission }) });
+  routes["POST /v1/score"] = response.status;
+  return { status: response.status, value: await response.json() };
+}
+const graderPasses = {};
 try {
   for (let attempt = 0; attempt < 100; attempt++) { try { await get("/health"); break; } catch { await new Promise((resolve) => setTimeout(resolve, 20)); } }
   const health = await get("/health"); assert.equal(health.response.status, 200);
   const listed = await get("/v1/tasks"); assert.equal(listed.value.tasks.length, tasks.length);
   const shown = await get(`/v1/tasks/${first}`); assert.equal(shown.value.task.id, first);
-  const score = await fetch(`${base}/v1/score`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskId: first, submission: report.rows[0].submission }) });
-  routes["POST /v1/score"] = score.status; assert.equal(score.status, 200);
+  const score = await postScore(first, report.rows[0].submission);
+  assert.equal(score.status, 200);
   assert.equal((await get("/v1/provenance")).response.status, 200);
   assert.equal((await get("/v1/index-entry")).value.task_count, tasks.length);
+
+  // Good-answers pass: the canonical expected call must score 1 on every task.
+  let good = 0;
+  for (const task of tasks) {
+    const result = await postScore(task.id, { answer: task.expected });
+    if (result.value.score === 1) good += 1;
+  }
+  assert.equal(good, tasks.length);
+  graderPasses.good_answers = good;
+
+  // Bad-answers pass: empty, junk, prose and other-task calls must score 0.
+  const badSamples = ["", "__mock_incorrect__", '{"name":"noop","arguments":{}}', "Sure, I called the tool."];
+  let bad = 0;
+  for (const answer of badSamples) {
+    for (const task of tasks) {
+      const result = await postScore(task.id, { answer });
+      assert.equal(result.value.score, 0);
+      bad += 1;
+    }
+  }
+  graderPasses.bad_answers = bad;
+
+  // Same-answer pass: one canonical call replayed everywhere scores 0 elsewhere.
+  let same = 0;
+  for (const task of tasks.slice(1)) {
+    const result = await postScore(task.id, { answer: tasks[0].expected });
+    assert.equal(result.value.score, 0);
+    same += 1;
+  }
+  graderPasses.same_answer_replays = same;
+
+  // Stale pass: the pre-migration call scores 0 and is flagged staleSchemaUsed.
+  let staleFlagged = 0;
+  for (const task of tasks) {
+    const result = await postScore(task.id, { answer: task.metadata.stale });
+    assert.equal(result.value.score, 0);
+    if (result.value.reason.includes("staleSchemaUsed")) staleFlagged += 1;
+  }
+  assert.equal(staleFlagged, tasks.length);
+  graderPasses.stale_answers = staleFlagged;
 } finally { if (server.exitCode === null) { server.kill("SIGTERM"); await once(server, "exit"); } }
 
 const transport = new StdioClientTransport({ command: process.execPath, args: ["dist/cli.js", "mcp"], cwd: process.cwd(), stderr: "pipe" });
@@ -57,7 +103,27 @@ try {
   }
 } finally { await client.close(); }
 
-const artifact = { task_count: report.rows.length, scores: report.rows.map((row) => row.score), route_status_codes: routes, tool_names: toolNames };
+// SDK pass: non-string answers reach the grader through score(), not the API.
+const { score: scoreOne } = await import("../dist/index.js");
+let nonString = 0;
+for (const answer of [null, 42, { name: "x" }, ["a", "b"]]) {
+  const result = await scoreOne(first, { answer });
+  assert.equal(result.score, 0);
+  nonString += 1;
+}
+const deep = `{"name":"issues.create","arguments":{"x":${"[".repeat(5000)}${"]".repeat(5000)}}}`;
+assert.equal((await scoreOne(first, { answer: deep })).score, 0);
+graderPasses.non_string_answers = nonString + 1;
+
+const byId = new Map(tasks.map((task) => [task.id, task]));
+const perKind = {};
+for (const row of report.rows) {
+  const kind = byId.get(row.taskId)?.metadata?.mutationKind ?? "unknown";
+  (perKind[kind] ??= { tasks: 0, correct: 0 }).tasks += 1;
+  perKind[kind].correct += row.score === 1 ? 1 : 0;
+}
+const staleRate = report.rows.filter((row) => row.reason.includes("staleSchemaUsed")).length / report.rows.length;
+const artifact = { task_count: report.rows.length, scores: report.rows.map((row) => row.score), per_mutation_kind: perKind, stale_schema_used_rate: staleRate, grader_passes: graderPasses, route_status_codes: routes, tool_names: toolNames };
 await mkdir("artifacts", { recursive: true });
 await writeFile("artifacts/e2e-report.json", `${JSON.stringify(artifact, null, 2)}\n`);
 assert.match(await readFile("data/PROVENANCE.md", "utf8"), /Seeded schema-mutation task generator/);
