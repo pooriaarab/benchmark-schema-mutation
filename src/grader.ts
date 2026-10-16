@@ -73,14 +73,19 @@ function firstDiff(got: JsonValue, expected: JsonValue, path: string): string {
 export function gradeCall(task: Task, answer: string | undefined): TaskScore {
   const kind = typeof task.metadata?.mutationKind === "string" ? task.metadata.mutationKind : "unknown";
   const details = { mutationKind: kind, staleSchemaUsed: false };
-  if (answer === undefined || answer.trim() === "") {
+  if (typeof answer !== "string" || answer.trim() === "") {
     return { score: 0, reason: `[${kind}] no answer returned`, details };
   }
   const call = extractCall(answer);
   if (call === undefined) {
     return { score: 0, reason: `[${kind}] answer has no parseable {"name","arguments"} object`, details };
   }
-  const normalized = canonize({ name: call.name, arguments: call.arguments });
+  let normalized: string;
+  try {
+    normalized = canonize({ name: call.name, arguments: call.arguments });
+  } catch {
+    return { score: 0, reason: `[${kind}] answer is too deeply nested to normalise`, details };
+  }
   if (normalized === task.expected) {
     return { score: 1, reason: `[${kind}] call matches the current schema`, details };
   }
