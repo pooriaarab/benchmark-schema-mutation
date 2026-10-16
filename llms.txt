@@ -16,7 +16,7 @@ The root exports `benchmark`, `run`, and `score`. `benchmark-schema-mutation/api
 
 ## Commands
 
-The CLI supports list, show, run, score, card, provenance, index-entry, serve, and mcp. Use `--provider mock` for offline verification; OpenRouter and OpenAI-compatible endpoints are supported.
+The CLI supports list, show, run, score, card, provenance, index-entry, serve, and mcp. Use `--provider mock` for offline verification; OpenRouter and OpenAI-compatible endpoints are supported. `--tasks <path>` runs an alternate JSONL task file on every surface (SDK `{ tasks }`, API `?tasks=`, MCP `tasks` argument; remote paths need the `BENCHMARK_SCHEMA_MUTATION_TASKS_ALLOW` allow-list).
 
 ## Verification
 

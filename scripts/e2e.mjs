@@ -12,6 +12,24 @@ const tasks = (await readFile("data/tasks.jsonl", "utf8")).trim().split("\n").ma
 assert.equal(tasks.length, 60);
 const first = tasks[0].id;
 
+// Hidden-split pass: a differently seeded split must produce different
+// expected calls and prompts, not just new version strings. It is generated
+// first so every later pass can use it, and it lives in .hidden/ -- inside
+// .gitignore and outside the npm `files` list -- so it can never ship.
+await execFile(process.execPath, ["scripts/gen-tasks.mjs", "--seed", "424242", "--split", "hidden"]);
+const hiddenFile = ".hidden/tasks-hidden.jsonl";
+const hiddenAbs = `${process.cwd()}/${hiddenFile}`;
+const hidden = (await readFile(hiddenFile, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+assert.equal(hidden.length, tasks.length);
+const publicExpected = new Set(tasks.map((task) => task.expected));
+const mask = (text) => text.replace(/\d+\.\d+\.\d+/g, "V");
+const publicPrompts = new Set(tasks.map((task) => mask(task.prompt)));
+const graderPasses = {};
+graderPasses.hidden_expected_differ = hidden.filter((task) => !publicExpected.has(task.expected)).length;
+graderPasses.hidden_prompts_differ = hidden.filter((task) => !publicPrompts.has(mask(task.prompt))).length;
+assert.ok(graderPasses.hidden_expected_differ >= tasks.length / 2, "hidden split reuses public expected calls");
+assert.ok(graderPasses.hidden_prompts_differ >= tasks.length / 2, "hidden split reuses public prompts");
+
 await execFile("npm", ["run", "build"]);
 const cli = await execFile(process.execPath, ["dist/cli.js", "run", "--model", "offline", "--provider", "mock", "--json"], { maxBuffer: 4_000_000 });
 const report = JSON.parse(cli.stdout);
@@ -32,22 +50,51 @@ const markdown = await execFile(process.execPath, ["dist/cli.js", "run", "--mode
 assert.match(markdown.stdout, /## Schema mutation breakdown/);
 assert.match(markdown.stdout, /staleSchemaUsed rate: \d+\.\d%/);
 
+// CLI tasks pass: --tasks must run the alternate file on every command.
+const cliHidden = await execFile(process.execPath, ["dist/cli.js", "run", "--model", "offline", "--provider", "mock", "--tasks", hiddenFile, "--json"], { maxBuffer: 4_000_000 });
+const hiddenReport = JSON.parse(cliHidden.stdout);
+assert.equal(hiddenReport.rows.length, hidden.length);
+assert.ok(hiddenReport.rows.every((row) => row.taskId.startsWith("smh-")), "run --tasks did not use the hidden split");
+const cliList = await execFile(process.execPath, ["dist/cli.js", "list", "--tasks", hiddenFile, "--json"], { maxBuffer: 4_000_000 });
+assert.ok(JSON.parse(cliList.stdout).tasks.every((task) => task.id.startsWith("smh-")), "list --tasks did not use the hidden split");
+graderPasses.cli_tasks_option = 2;
+
+// SDK caching pass: default, hidden, default, hidden in ONE process. If the
+// benchmark object cached the task list across options (the `loaded ??=` trap
+// in benchmark-core), the third or fourth run would return the wrong ids.
+const { mockAdapter } = await import("benchmark-core");
+const sdk = await import("../dist/index.js");
+const adapter = mockAdapter({ seed: 7 });
+const sequence = [
+  (await sdk.run(adapter)).rows.map((row) => row.taskId),
+  (await sdk.run(adapter, { tasks: hiddenFile })).rows.map((row) => row.taskId),
+  (await sdk.run(adapter)).rows.map((row) => row.taskId),
+  (await sdk.run(adapter, { tasks: hiddenFile })).rows.map((row) => row.taskId),
+];
+assert.ok(sequence[0].every((id) => id.startsWith("smu-")) && sequence[2].every((id) => id.startsWith("smu-")), "SDK default run leaked alternate tasks");
+assert.ok(sequence[1].every((id) => id.startsWith("smh-")) && sequence[3].every((id) => id.startsWith("smh-")), "SDK run ignored the tasks option");
+assert.equal((await sdk.score(hidden[0].id, { answer: hidden[0].expected }, { tasks: hiddenFile })).score, 1);
+graderPasses.sdk_alternate_tasks = 5;
+
 const probe = createNetServer();
 await new Promise((resolve) => probe.listen(0, "127.0.0.1", resolve));
 const address = probe.address(); assert.ok(address && typeof address === "object");
 await new Promise((resolve) => probe.close(resolve));
-const server = spawn(process.execPath, ["dist/cli.js", "serve", String(address.port)], { stdio: ["ignore", "pipe", "pipe"] });
+const server = spawn(process.execPath, ["dist/cli.js", "serve", String(address.port)], {
+  stdio: ["ignore", "pipe", "pipe"],
+  env: { ...process.env, BENCHMARK_SCHEMA_MUTATION_TASKS_ALLOW: hiddenAbs },
+});
 const base = `http://127.0.0.1:${address.port}`; const routes = {};
 async function get(path) {
   const response = await fetch(`${base}${path}`); routes[`GET ${path}`] = response.status;
   return { response, value: await response.json() };
 }
-async function postScore(taskId, submission) {
-  const response = await fetch(`${base}/v1/score`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskId, submission }) });
-  routes["POST /v1/score"] = response.status;
+async function postScore(taskId, submission, tasksPath) {
+  const query = tasksPath === undefined ? "" : `?tasks=${encodeURIComponent(tasksPath)}`;
+  const response = await fetch(`${base}/v1/score${query}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskId, submission }) });
+  routes[`POST /v1/score${query === "" ? "" : "?tasks=<path>"}`] = response.status;
   return { status: response.status, value: await response.json() };
 }
-const graderPasses = {};
 try {
   for (let attempt = 0; attempt < 100; attempt++) { try { await get("/health"); break; } catch { await new Promise((resolve) => setTimeout(resolve, 20)); } }
   const health = await get("/health"); assert.equal(health.response.status, 200);
@@ -59,6 +106,18 @@ try {
   assert.equal(typeof score.value.details?.staleSchemaUsed, "boolean");
   assert.equal((await get("/v1/provenance")).response.status, 200);
   assert.equal((await get("/v1/index-entry")).value.task_count, tasks.length);
+
+  // API tasks pass: an allow-listed file switches every route, anything else
+  // is refused rather than silently graded against the default split.
+  const altListed = await get(`/v1/tasks?tasks=${encodeURIComponent(hiddenAbs)}`);
+  assert.ok(altListed.value.tasks.every((task) => task.id.startsWith("smh-")));
+  const altShown = await get(`/v1/tasks/${hidden[0].id}?tasks=${encodeURIComponent(hiddenAbs)}`);
+  assert.equal(altShown.value.task.id, hidden[0].id);
+  const altScore = await postScore(hidden[0].id, { answer: hidden[0].expected }, hiddenAbs);
+  assert.equal(altScore.value.score, 1);
+  const refused = await get(`/v1/tasks?tasks=${encodeURIComponent("/etc/passwd")}`);
+  assert.equal(refused.response.status, 403);
+  graderPasses.api_alternate_tasks = 4;
 
   // Good-answers pass: the canonical expected call must score 1 on every task.
   let good = 0;
@@ -163,21 +222,10 @@ const durTask = { id: "e2e-duration", kind: "single", prompt: "", expected: cano
 assert.equal((await bench.score(durTask, { answer: '{"name":"events.create","arguments":{"duration_min":"PT0H45M"}}' })).score, 1);
 graderPasses.equal_durations = 1;
 
-// Hidden-split pass: a differently seeded split must produce different
-// expected calls and prompts, not just new version strings.
-await execFile(process.execPath, ["scripts/gen-tasks.mjs", "--seed", "424242", "--split", "hidden"]);
-const hiddenFile = ".hidden/tasks-hidden.jsonl";
-const hidden = (await readFile(hiddenFile, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
-assert.equal(hidden.length, tasks.length);
-const publicExpected = new Set(tasks.map((task) => task.expected));
-const mask = (text) => text.replace(/\d+\.\d+\.\d+/g, "V");
-const publicPrompts = new Set(tasks.map((task) => mask(task.prompt)));
-graderPasses.hidden_expected_differ = hidden.filter((task) => !publicExpected.has(task.expected)).length;
-graderPasses.hidden_prompts_differ = hidden.filter((task) => !publicPrompts.has(mask(task.prompt))).length;
-assert.ok(graderPasses.hidden_expected_differ >= tasks.length / 2, "hidden split reuses public expected calls");
-assert.ok(graderPasses.hidden_prompts_differ >= tasks.length / 2, "hidden split reuses public prompts");
-
-const transport = new StdioClientTransport({ command: process.execPath, args: ["dist/cli.js", "mcp"], cwd: process.cwd(), stderr: "pipe" });
+const transport = new StdioClientTransport({
+  command: process.execPath, args: ["dist/cli.js", "mcp"], cwd: process.cwd(), stderr: "pipe",
+  env: { ...process.env, BENCHMARK_SCHEMA_MUTATION_TASKS_ALLOW: hiddenAbs },
+});
 const client = new Client({ name: "benchmark-schema-mutation-e2e", version: "0.1.0" });
 await client.connect(transport); let toolNames;
 try {
@@ -192,6 +240,15 @@ try {
     const result = await client.callTool({ name, arguments: args });
     if (name === "run_benchmark") assert.equal(result.isError, true); else assert.notEqual(result.isError, true);
   }
+  // MCP tasks pass: a `tasks` argument switches tools to the allow-listed file.
+  const altTools = await client.callTool({ name: "list_tasks", arguments: { tasks: hiddenAbs } });
+  const altIds = JSON.parse(altTools.content[0].text).tasks.map((task) => task.id);
+  assert.ok(altIds.every((id) => id.startsWith("smh-")), "MCP list_tasks ignored the tasks argument");
+  const altAnswer = await client.callTool({ name: "score_answer", arguments: { taskId: hidden[0].id, submission: { answer: hidden[0].expected }, tasks: hiddenAbs } });
+  assert.equal(JSON.parse(altAnswer.content[0].text).score, 1);
+  const refused = await client.callTool({ name: "list_tasks", arguments: { tasks: "/etc/passwd" } });
+  assert.equal(refused.isError, true);
+  graderPasses.mcp_alternate_tasks = 3;
 } finally { await client.close(); }
 
 // SDK pass: non-string answers reach the grader through score(), not the API.
