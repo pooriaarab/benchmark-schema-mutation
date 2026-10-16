@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
 const PUBLIC_SEED = 20261015;
 const KINDS = ["renamedField", "newRequired", "enumChange", "splitEndpoint", "typeChange"];
@@ -567,7 +568,9 @@ if (!Number.isInteger(seed)) throw new Error("hidden split requires --seed <n>")
 if (split === "hidden" && seed === PUBLIC_SEED) throw new Error("hidden split must not reuse the public seed");
 
 const tasks = generate(seed, split);
-const file = split === "hidden" ? "data/tasks-hidden.jsonl" : "data/tasks.jsonl";
-await mkdir("data", { recursive: true });
+// Hidden output defaults to .hidden/ so it is gitignored and, unlike
+// data/, never inside the npm `files` list -- the tarball cannot leak it.
+const file = flag("--out") ?? (split === "hidden" ? ".hidden/tasks-hidden.jsonl" : "data/tasks.jsonl");
+await mkdir(dirname(file), { recursive: true });
 await writeFile(file, tasks.map((task) => JSON.stringify(task)).join("\n") + "\n");
 console.log(`wrote ${tasks.length} ${split} tasks to ${file}`);
