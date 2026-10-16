@@ -274,9 +274,17 @@ const deep = `{"name":"issues.create","arguments":{"x":${"[".repeat(5000)}${"]".
 assert.equal((await scoreOne(first, { answer: deep })).score, 0);
 graderPasses.non_string_answers = nonString + 1;
 
+// Out pass: hidden generation honours --out but refuses a path inside data/,
+// which is where a held-out file would escape the name guard below.
+await execFile(process.execPath, ["scripts/gen-tasks.mjs", "--seed", "777", "--split", "hidden", "--out", ".hidden/probe.jsonl"]);
+assert.equal((await readFile(".hidden/probe.jsonl", "utf8")).trim().split("\n").length, 60);
+const insideData = await execFile(process.execPath, ["scripts/gen-tasks.mjs", "--seed", "777", "--split", "hidden", "--out", "data/probe-heldout.jsonl"]).then(() => null, (err) => err);
+assert.ok(insideData !== null, "hidden --out inside data/ should fail");
+graderPasses.out_flag = 2;
+
 // Pack pass: the npm tarball must never list a hidden-split file. This runs
-// after the hidden fixture exists, so a regression that writes it back into
-// data/ (or anywhere else inside `files`) fails here.
+// after the hidden fixtures exist; the name check here plus the generator's
+// refusal to write hidden output under data/ keep the split out of `files`.
 const packed = JSON.parse((await execFile("npm", ["pack", "--dry-run", "--json"])).stdout);
 const packedNames = packed.flatMap((entry) => entry.files.map((file) => file.path));
 assert.ok(!packedNames.some((name) => name.includes("hidden")), `npm pack lists hidden files: ${packedNames.filter((name) => name.includes("hidden")).join(", ")}`);
