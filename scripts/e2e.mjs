@@ -166,7 +166,8 @@ graderPasses.equal_durations = 1;
 // Hidden-split pass: a differently seeded split must produce different
 // expected calls and prompts, not just new version strings.
 await execFile(process.execPath, ["scripts/gen-tasks.mjs", "--seed", "424242", "--split", "hidden"]);
-const hidden = (await readFile("data/tasks-hidden.jsonl", "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+const hiddenFile = ".hidden/tasks-hidden.jsonl";
+const hidden = (await readFile(hiddenFile, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
 assert.equal(hidden.length, tasks.length);
 const publicExpected = new Set(tasks.map((task) => task.expected));
 const mask = (text) => text.replace(/\d+\.\d+\.\d+/g, "V");
@@ -204,6 +205,14 @@ for (const answer of [null, 42, { name: "x" }, ["a", "b"]]) {
 const deep = `{"name":"issues.create","arguments":{"x":${"[".repeat(5000)}${"]".repeat(5000)}}}`;
 assert.equal((await scoreOne(first, { answer: deep })).score, 0);
 graderPasses.non_string_answers = nonString + 1;
+
+// Pack pass: the npm tarball must never list a hidden-split file. This runs
+// after the hidden fixture exists, so a regression that writes it back into
+// data/ (or anywhere else inside `files`) fails here.
+const packed = JSON.parse((await execFile("npm", ["pack", "--dry-run", "--json"])).stdout);
+const packedNames = packed.flatMap((entry) => entry.files.map((file) => file.path));
+assert.ok(!packedNames.some((name) => name.includes("hidden")), `npm pack lists hidden files: ${packedNames.filter((name) => name.includes("hidden")).join(", ")}`);
+graderPasses.pack_excludes_hidden = packedNames.length;
 
 const byId = new Map(tasks.map((task) => [task.id, task]));
 const perKind = {};
