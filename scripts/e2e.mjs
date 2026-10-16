@@ -84,6 +84,25 @@ try {
   }
   assert.equal(staleFlagged, tasks.length);
   graderPasses.stale_answers = staleFlagged;
+
+  // Enum-wording pass: enumChange requests keep pre-migration wording, so the
+  // new enum value must not appear in the request and a verbatim copy of the
+  // user's words is the stale call.
+  let enumOldWording = 0;
+  for (const task of tasks.filter((t) => t.metadata.mutationKind === "enumChange")) {
+    const expected = JSON.parse(task.expected);
+    const stale = JSON.parse(task.metadata.stale);
+    const changed = Object.keys(expected.arguments).find((k) => JSON.stringify(expected.arguments[k]) !== JSON.stringify(stale.arguments[k]));
+    const request = task.prompt.split("USER REQUEST:")[1].split("Respond with")[0];
+    assert.ok(!new RegExp(`\\b${expected.arguments[changed]}\\b`).test(request), `${task.id} request leaks the new enum value`);
+    assert.ok(task.prompt.includes(`-> ${expected.arguments[changed]}`), `${task.id} schema lacks the old->new legend`);
+    const result = await postScore(task.id, { answer: task.metadata.stale });
+    assert.equal(result.value.score, 0);
+    assert.ok(result.value.reason.includes("staleSchemaUsed"));
+    enumOldWording += 1;
+  }
+  assert.equal(enumOldWording, tasks.length / 5);
+  graderPasses.enum_old_wording = enumOldWording;
 } finally { if (server.exitCode === null) { server.kill("SIGTERM"); await once(server, "exit"); } }
 
 // Hidden-split pass: a differently seeded split must produce different
