@@ -502,9 +502,13 @@ const OPERATORS = {
     };
   },
   enumChange(t, c, m, v) {
-    const props = { ...t.props, [m.field]: { ...t.props[m.field], enum: m.to } };
+    // The request keeps the pre-migration wording; only the current schema
+    // carries the old -> new value map, so copying the user's words emits the
+    // stale value and scores 0.
+    const legend = Object.entries(m.map).map(([a, b]) => `${a} -> ${b}`).join(", ");
+    const props = { ...t.props, [m.field]: { ...t.props[m.field], enum: m.to, description: `${t.props[m.field].description}. Pre-migration values map as: ${legend}` } };
     const use = m.map[t.call(c)[m.field]];
-    return { schemas: [spec(t.name, t.desc, props, t.req, v)], ask: t.ask(c, { [m.field]: use }), expected: { name: t.name, arguments: { ...t.call(c), [m.field]: use } } };
+    return { schemas: [spec(t.name, t.desc, props, t.req, v)], ask: t.ask(c), expected: { name: t.name, arguments: { ...t.call(c), [m.field]: use } } };
   },
   splitEndpoint(t, c, m, v) {
     const { field, children } = m;
