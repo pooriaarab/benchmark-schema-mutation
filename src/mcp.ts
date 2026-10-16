@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { createMcpServer as create, type Benchmark, type Task } from "benchmark-core";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -40,7 +41,9 @@ export function createMcpServer(bench: Benchmark<Task> = benchmark): Server {
     let handler = alternates.get(path);
     if (handler === undefined) {
       handler = installedHandler(create(benchmarkForTasksFile(path)), CALL_METHOD);
-      alternates.set(path, handler);
+      // Bare names resolve inside data/ without an allow-list, so cache only
+      // when the file exists; otherwise the map grows one entry per request.
+      if (existsSync(path)) alternates.set(path, handler);
     }
     return handler;
   };
