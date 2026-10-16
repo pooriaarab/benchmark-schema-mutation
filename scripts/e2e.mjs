@@ -86,6 +86,19 @@ try {
   graderPasses.stale_answers = staleFlagged;
 } finally { if (server.exitCode === null) { server.kill("SIGTERM"); await once(server, "exit"); } }
 
+// Hidden-split pass: a differently seeded split must produce different
+// expected calls and prompts, not just new version strings.
+await execFile(process.execPath, ["scripts/gen-tasks.mjs", "--seed", "424242", "--split", "hidden"]);
+const hidden = (await readFile("data/tasks-hidden.jsonl", "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+assert.equal(hidden.length, tasks.length);
+const publicExpected = new Set(tasks.map((task) => task.expected));
+const mask = (text) => text.replace(/\d+\.\d+\.\d+/g, "V");
+const publicPrompts = new Set(tasks.map((task) => mask(task.prompt)));
+graderPasses.hidden_expected_differ = hidden.filter((task) => !publicExpected.has(task.expected)).length;
+graderPasses.hidden_prompts_differ = hidden.filter((task) => !publicPrompts.has(mask(task.prompt))).length;
+assert.ok(graderPasses.hidden_expected_differ >= tasks.length / 2, "hidden split reuses public expected calls");
+assert.ok(graderPasses.hidden_prompts_differ >= tasks.length / 2, "hidden split reuses public prompts");
+
 const transport = new StdioClientTransport({ command: process.execPath, args: ["dist/cli.js", "mcp"], cwd: process.cwd(), stderr: "pipe" });
 const client = new Client({ name: "benchmark-schema-mutation-e2e", version: "0.1.0" });
 await client.connect(transport); let toolNames;

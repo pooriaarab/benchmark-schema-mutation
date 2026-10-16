@@ -9,154 +9,278 @@ const I = (d) => ({ type: "integer", description: d });
 const A = (d) => ({ type: "array", items: { type: "string" }, description: d });
 const E = (d, v) => ({ type: "string", enum: v, description: d });
 
-// Base tool catalogue. `call` is the stale call: valid under the base schema.
-// `ask` must mention every value in `call`; enumChange asks use `enumUp.ask`,
-// which phrases the request with the NEW enum concept while `call` keeps the
-// old nearest value, so a memorizer emits `call` and a schema-reader emits `use`.
+const pick = (r, xs) => xs[Math.floor(r() * xs.length)];
+const int = (r, lo, hi) => lo + Math.floor(r() * (hi - lo + 1));
+const digits = (r, n) => Array.from({ length: n }, () => Math.floor(r() * 10)).join("");
+const usd = (r) => int(r, 500, 9999) / 100;
+const email = (r) => `${pick(r, ["sam", "lee", "jae", "kim", "pat"])}@${pick(r, ["acme.io", "foo.dev", "bar.io", "baz.dev"])}`;
+const phone = (r) => `+1416555${digits(r, 4)}`;
+const code = (r) => `Your code is ${digits(r, 4)}.`;
+
+// Base tool catalogue. `vars(rng)` draws the concrete values (ids, amounts,
+// names) for one task, so a different seed yields genuinely different tasks.
+// `ask(ctx, words)` renders the request; `words` overrides how an enum-valued
+// field is phrased. `call(ctx)` is the stale call, valid under the base
+// schema. `ops[kind]` lists mutation variants; the seed picks one.
 const TOOLS = [
   {
     name: "issues.create", v: "3.2.0", desc: "Create an issue in a repository.",
     props: { repo: S("Repository as owner/name"), title: S("Issue title"), body: S("Markdown body"), labels: A("Label names"), kind: E("Issue kind", ["bug", "feature", "chore"]), visibility: E("Who can see it", ["public", "maintainers"]) },
     req: ["repo", "title", "kind", "visibility"],
-    ask: "In acme/widgets open a feature issue titled 'Dark mode' with body 'Add a dark theme.', label ui, visible to maintainers.",
-    call: { repo: "acme/widgets", title: "Dark mode", body: "Add a dark theme.", labels: ["ui"], kind: "feature", visibility: "maintainers" },
-    rename: { field: "title", to: "subject" },
-    addReq: { field: "severity", schema: E("Triage severity", ["low", "medium", "high"]), value: "high", phrase: "Set severity to high." },
-    enumUp: { field: "kind", to: ["defect", "enhancement", "task"], use: "enhancement", ask: "In acme/widgets file an enhancement titled 'Dark mode' with body 'Add a dark theme.', label ui, visible to maintainers." },
-    reType: { field: "labels", to: S("Comma-separated label names"), value: "ui" },
-    split: { field: "visibility", children: { public: "issues.create_public", maintainers: "issues.create_team" } },
+    vars: (r) => ({
+      repo: pick(r, ["acme/widgets", "northwind/shop", "globex/portal", "initech/billing"]),
+      title: pick(r, ["Dark mode", "Export CSV", "SSO login", "Mobile layout"]),
+      body: pick(r, ["Add a dark theme.", "See the attached spec.", "Requested by the design team.", "Blocked on the API refresh."]),
+      label: pick(r, ["ui", "backend", "billing", "docs"]),
+      kind: pick(r, ["feature", "bug", "chore"]),
+      visibility: pick(r, ["maintainers", "public"]),
+    }),
+    ask: (c, w = {}) => `In ${c.repo} open a '${w.kind ?? c.kind}' issue titled '${c.title}' with body '${c.body}', label ${c.label}, visible to ${w.visibility ?? c.visibility}.`,
+    call: (c) => ({ repo: c.repo, title: c.title, body: c.body, labels: [c.label], kind: c.kind, visibility: c.visibility }),
+    ops: {
+      renamedField: [() => ({ field: "title", to: "subject" })],
+      newRequired: [() => ({ field: "severity", schema: E("Triage severity", ["low", "medium", "high"]), value: "high" })],
+      enumChange: [() => ({ field: "kind", to: ["defect", "enhancement", "task"], map: { bug: "defect", feature: "enhancement", chore: "task" } })],
+      splitEndpoint: [() => ({ field: "visibility", children: { public: "issues.create_public", maintainers: "issues.create_team" } })],
+      typeChange: [(c) => ({ field: "labels", to: S("Comma-separated label names"), value: c.label })],
+    },
   },
   {
     name: "charges.create", v: "2.8.1", desc: "Create a payment charge.",
     props: { customer: S("Customer id"), amount: N("Amount in dollars"), currency: E("Settlement currency", ["usd", "eur", "gbp"]), capture: E("Capture mode", ["auto", "manual"]), description: S("Statement text") },
     req: ["customer", "amount", "currency", "capture"],
-    ask: "Charge customer cus_4821 $45.50 USD for 'Order 991' with automatic capture.",
-    call: { customer: "cus_4821", amount: 45.5, currency: "usd", capture: "auto", description: "Order 991" },
-    rename: { field: "description", to: "memo" },
-    addReq: { field: "idempotency_key", schema: S("Unique key to retry safely"), value: "req-5541", phrase: "Use idempotency key req-5541." },
-    enumUp: { field: "currency", to: ["USD", "EUR", "GBP", "JPY"], use: "USD", ask: "Charge customer cus_4821 $45.50 in the USD currency for 'Order 991' with automatic capture." },
-    reType: { field: "amount", to: I("Amount in cents"), value: 4550 },
-    split: { field: "capture", children: { auto: "charges.create_capture", manual: "charges.authorize" } },
+    vars: (r) => ({
+      customer: `cus_${int(r, 1000, 9999)}`,
+      amount: usd(r),
+      currency: pick(r, ["usd", "eur", "gbp"]),
+      capture: pick(r, ["auto", "manual"]),
+      description: `Order ${int(r, 100, 999)}`,
+    }),
+    ask: (c, w = {}) => `Charge customer ${c.customer} ${c.amount} in '${w.currency ?? c.currency}' for '${c.description}' with ${w.capture ?? c.capture} capture.`,
+    call: (c) => ({ customer: c.customer, amount: c.amount, currency: c.currency, capture: c.capture, description: c.description }),
+    ops: {
+      renamedField: [() => ({ field: "description", to: "memo" })],
+      newRequired: [(c, r) => ({ field: "idempotency_key", schema: S("Unique key to retry safely"), value: `req-${int(r, 1000, 9999)}` })],
+      enumChange: [() => ({ field: "currency", to: ["USD", "EUR", "GBP", "JPY"], map: { usd: "USD", eur: "EUR", gbp: "GBP" } })],
+      splitEndpoint: [() => ({ field: "capture", children: { auto: "charges.create_capture", manual: "charges.authorize" } })],
+      typeChange: [(c) => ({ field: "amount", to: I("Amount in cents"), value: Math.round(c.amount * 100) })],
+    },
   },
   {
     name: "messages.post", v: "5.1.0", desc: "Post a message to a chat channel.",
     props: { channel: S("Channel name"), text: S("Message text"), attachments: A("Attachment URLs"), priority: E("Delivery priority", ["normal", "high", "urgent"]), audience: E("Who may read it", ["everyone", "admins"]) },
     req: ["channel", "text", "priority", "audience"],
-    ask: "Post 'Deploy finished.' to #ops with attachment https://ci.example/build/9 at high priority for everyone.",
-    call: { channel: "#ops", text: "Deploy finished.", attachments: ["https://ci.example/build/9"], priority: "high", audience: "everyone" },
-    rename: { field: "text", to: "body" },
-    addReq: { field: "team_id", schema: S("Workspace team id"), value: "T09ALPHA", phrase: "The workspace team id is T09ALPHA." },
-    enumUp: { field: "priority", to: ["low", "elevated", "critical"], use: "elevated", ask: "Post 'Deploy finished.' to #ops with attachment https://ci.example/build/9 at elevated priority for everyone." },
-    reType: { field: "attachments", to: S("Single attachment URL"), value: "https://ci.example/build/9" },
-    split: { field: "audience", children: { everyone: "messages.post_channel", admins: "messages.post_admins" } },
+    vars: (r) => ({
+      channel: pick(r, ["#ops", "#dev", "#alerts"]),
+      text: pick(r, ["Deploy finished.", "The build is green.", "Rollback started.", "Maintenance begins at midnight."]),
+      attachment: `https://ci.example/build/${int(r, 2, 98)}`,
+      priority: pick(r, ["normal", "high", "urgent"]),
+      audience: pick(r, ["everyone", "admins"]),
+    }),
+    ask: (c, w = {}) => `Post '${c.text}' to ${c.channel} with attachment ${c.attachment} at '${w.priority ?? c.priority}' priority for ${w.audience ?? c.audience}.`,
+    call: (c) => ({ channel: c.channel, text: c.text, attachments: [c.attachment], priority: c.priority, audience: c.audience }),
+    ops: {
+      renamedField: [() => ({ field: "text", to: "body" })],
+      newRequired: [(c, r) => ({ field: "team_id", schema: S("Workspace team id"), value: `T${int(r, 2, 9)}${digits(r, 4)}` })],
+      enumChange: [() => ({ field: "priority", to: ["low", "elevated", "critical"], map: { normal: "low", high: "elevated", urgent: "critical" } })],
+      splitEndpoint: [() => ({ field: "audience", children: { everyone: "messages.post_channel", admins: "messages.post_admins" } })],
+      typeChange: [(c) => ({ field: "attachments", to: S("Single attachment URL"), value: c.attachment })],
+    },
   },
   {
     name: "events.create", v: "4.0.2", desc: "Create a calendar event.",
     props: { calendar_id: S("Calendar id"), title: S("Event title"), start: S("ISO 8601 start time"), duration_min: I("Length in minutes"), attendees: A("Attendee emails"), status: E("Event status", ["confirmed", "tentative", "cancelled"]), scope: E("Calendar scope", ["personal", "shared"]) },
     req: ["calendar_id", "title", "start", "status", "scope"],
-    ask: "On calendar cal_main create 'Quarterly review' starting 2026-11-02T15:00:00Z lasting 45 minutes with attendees a@x.io and b@x.io, status tentative, on the shared calendar.",
-    call: { calendar_id: "cal_main", title: "Quarterly review", start: "2026-11-02T15:00:00Z", duration_min: 45, attendees: ["a@x.io", "b@x.io"], status: "tentative", scope: "shared" },
-    rename: { field: "title", to: "summary" },
-    addReq: { field: "timezone", schema: S("IANA timezone"), value: "America/Toronto", phrase: "The timezone is America/Toronto." },
-    enumUp: { field: "status", to: ["accepted", "maybe", "declined"], use: "maybe", ask: "On calendar cal_main create 'Quarterly review' starting 2026-11-02T15:00:00Z lasting 45 minutes with attendees a@x.io and b@x.io, status maybe, on the shared calendar." },
-    reType: { field: "duration_min", to: S("ISO 8601 duration"), value: "PT45M" },
-    split: { field: "scope", children: { personal: "events.create_personal", shared: "events.create_shared" } },
+    vars: (r) => ({
+      calendar: pick(r, ["cal_main", "cal_team", "cal_ops"]),
+      title: pick(r, ["Quarterly review", "Sprint demo", "Board sync"]),
+      start: `2026-${pick(r, ["10", "11", "12"])}-${pick(r, ["02", "09", "17", "24"])}T${pick(r, ["09", "14", "15", "18"])}:00:00Z`,
+      duration: pick(r, [30, 45, 60, 90]),
+      attendees: [email(r), email(r)],
+      status: pick(r, ["confirmed", "tentative", "cancelled"]),
+      scope: pick(r, ["personal", "shared"]),
+    }),
+    ask: (c, w = {}) => `On calendar ${c.calendar} create '${c.title}' starting ${c.start} lasting ${c.duration} minutes with attendees ${c.attendees.join(" and ")}, status '${w.status ?? c.status}', on the ${w.scope ?? c.scope} calendar.`,
+    call: (c) => ({ calendar_id: c.calendar, title: c.title, start: c.start, duration_min: c.duration, attendees: c.attendees, status: c.status, scope: c.scope }),
+    ops: {
+      renamedField: [() => ({ field: "title", to: "summary" })],
+      newRequired: [(c, r) => ({ field: "timezone", schema: S("IANA timezone"), value: pick(r, ["America/Toronto", "Europe/Berlin", "UTC"]) })],
+      enumChange: [() => ({ field: "status", to: ["accepted", "maybe", "declined"], map: { confirmed: "accepted", tentative: "maybe", cancelled: "declined" } })],
+      splitEndpoint: [() => ({ field: "scope", children: { personal: "events.create_personal", shared: "events.create_shared" } })],
+      typeChange: [(c) => ({ field: "duration_min", to: S("ISO 8601 duration"), value: `PT${c.duration}M` })],
+    },
   },
   {
     name: "tickets.open", v: "2.4.0", desc: "Open a support ticket.",
     props: { requester: S("Requester email"), subject: S("Ticket subject"), comment: S("First comment"), tags: A("Tag names"), priority: E("Ticket priority", ["low", "normal", "high", "urgent"]), queue: E("Routing queue", ["support", "billing"]) },
     req: ["requester", "subject", "comment", "priority", "queue"],
-    ask: "Open a billing ticket for sam@acme.io titled 'Invoice mismatch' saying 'Billed twice in October.', tag billing, priority high.",
-    call: { requester: "sam@acme.io", subject: "Invoice mismatch", comment: "Billed twice in October.", tags: ["billing"], priority: "high", queue: "billing" },
-    rename: { field: "subject", to: "title" },
-    addReq: { field: "brand_id", schema: I("Brand to file under"), value: 7, phrase: "Route it to brand 7." },
-    enumUp: { field: "priority", to: ["p3", "p2", "p1", "p0"], use: "p1", ask: "Open a billing ticket for sam@acme.io titled 'Invoice mismatch' saying 'Billed twice in October.', tag billing, priority p1." },
-    reType: { field: "tags", to: S("Comma-separated tags"), value: "billing" },
-    split: { field: "queue", children: { support: "tickets.open_support", billing: "tickets.open_billing" } },
+    vars: (r) => ({
+      requester: email(r),
+      subject: pick(r, ["Invoice mismatch", "Login fails", "Refund missing", "Cannot export"]),
+      comment: pick(r, ["Billed twice in October.", "Error 500 on sign-in.", "Money never arrived.", "Export stalls at 90%."]),
+      tag: pick(r, ["billing", "auth", "refunds"]),
+      priority: pick(r, ["low", "normal", "high", "urgent"]),
+      queue: pick(r, ["support", "billing"]),
+    }),
+    ask: (c, w = {}) => `Open a ticket in the '${w.queue ?? c.queue}' queue for ${c.requester} titled '${c.subject}' saying '${c.comment}', tag ${c.tag}, priority '${w.priority ?? c.priority}'.`,
+    call: (c) => ({ requester: c.requester, subject: c.subject, comment: c.comment, tags: [c.tag], priority: c.priority, queue: c.queue }),
+    ops: {
+      renamedField: [() => ({ field: "subject", to: "title" })],
+      newRequired: [(c, r) => ({ field: "brand_id", schema: I("Brand to file under"), value: int(r, 3, 9) })],
+      enumChange: [() => ({ field: "priority", to: ["p3", "p2", "p1", "p0"], map: { low: "p3", normal: "p2", high: "p1", urgent: "p0" } })],
+      splitEndpoint: [() => ({ field: "queue", children: { support: "tickets.open_support", billing: "tickets.open_billing" } })],
+      typeChange: [(c) => ({ field: "tags", to: S("Comma-separated tags"), value: c.tag })],
+    },
   },
   {
     name: "emails.send", v: "3.0.0", desc: "Send a transactional email.",
     props: { to: S("Recipient address"), subject: S("Subject line"), body: S("Plain text body"), cc: A("CC addresses"), importance: E("Importance flag", ["normal", "high"]), audience: E("Recipient class", ["customer", "internal"]) },
     req: ["to", "subject", "body", "importance", "audience"],
-    ask: "Email lee@acme.io subject 'Receipt #311' body 'Thanks for your order.', cc ops@acme.io, high importance, customer audience.",
-    call: { to: "lee@acme.io", subject: "Receipt #311", body: "Thanks for your order.", cc: ["ops@acme.io"], importance: "high", audience: "customer" },
-    rename: { field: "body", to: "html" },
-    addReq: { field: "campaign_id", schema: S("Campaign tag"), value: "cmp-88", phrase: "Tag it to campaign cmp-88." },
-    enumUp: { field: "importance", to: ["routine", "priority"], use: "priority", ask: "Email lee@acme.io subject 'Receipt #311' body 'Thanks for your order.', cc ops@acme.io, priority importance, customer audience." },
-    reType: { field: "cc", to: S("Comma-separated CC addresses"), value: "ops@acme.io" },
-    split: { field: "audience", children: { customer: "emails.send_customer", internal: "emails.send_internal" } },
+    vars: (r) => ({
+      to: email(r),
+      subject: pick(r, ["Receipt #311", "Welcome aboard", "Your invoice", "Password reset"]),
+      body: pick(r, ["Thanks for your order.", "Here is your receipt.", "Reset instructions inside."]),
+      cc: email(r),
+      importance: pick(r, ["normal", "high"]),
+      audience: pick(r, ["customer", "internal"]),
+    }),
+    ask: (c, w = {}) => `Email ${c.to} subject '${c.subject}' body '${c.body}', cc ${c.cc}, '${w.importance ?? c.importance}' importance, ${w.audience ?? c.audience} audience.`,
+    call: (c) => ({ to: c.to, subject: c.subject, body: c.body, cc: [c.cc], importance: c.importance, audience: c.audience }),
+    ops: {
+      renamedField: [() => ({ field: "body", to: "html" })],
+      newRequired: [(c, r) => ({ field: "campaign_id", schema: S("Campaign tag"), value: `cmp-${int(r, 10, 99)}` })],
+      enumChange: [() => ({ field: "importance", to: ["routine", "priority"], map: { normal: "routine", high: "priority" } })],
+      splitEndpoint: [() => ({ field: "audience", children: { customer: "emails.send_customer", internal: "emails.send_internal" } })],
+      typeChange: [(c) => ({ field: "cc", to: S("Comma-separated CC addresses"), value: c.cc })],
+    },
   },
   {
     name: "objects.upload", v: "6.1.3", desc: "Upload an object to a storage bucket.",
     props: { bucket: S("Bucket name"), key: S("Object key"), content_type: S("MIME type"), tags: A("Object tags"), storage: E("Storage class", ["standard", "infrequent", "archive"]), acl: E("Access policy", ["private", "public"]) },
     req: ["bucket", "key", "content_type", "storage", "acl"],
-    ask: "Upload img/hero.png (image/png) to bucket assets-prod, tags web and hero, standard storage, private acl.",
-    call: { bucket: "assets-prod", key: "img/hero.png", content_type: "image/png", tags: ["web", "hero"], storage: "standard", acl: "private" },
-    rename: { field: "key", to: "path" },
-    addReq: { field: "checksum", schema: S("Content checksum"), value: "sha256:9f2c", phrase: "Declare checksum sha256:9f2c." },
-    enumUp: { field: "storage", to: ["hot", "cool", "cold"], use: "cool", ask: "Upload img/hero.png (image/png) to bucket assets-prod, tags web and hero, cool storage, private acl." },
-    reType: { field: "tags", to: S("Comma-separated tags"), value: "web,hero" },
-    split: { field: "acl", children: { private: "objects.upload_private", public: "objects.upload_public" } },
+    vars: (r) => ({
+      bucket: pick(r, ["assets-prod", "media-eu", "backups", "static"]),
+      ...pick(r, [{ key: "img/hero.png", ct: "image/png" }, { key: "docs/guide.pdf", ct: "application/pdf" }, { key: "video/intro.mp4", ct: "video/mp4" }, { key: "css/site.css", ct: "text/css" }]),
+      tags: pick(r, [["web", "hero"], ["marketing"], ["assets", "public"], ["img", "hero", "web"]]),
+      storage: pick(r, ["standard", "infrequent", "archive"]),
+      acl: pick(r, ["private", "public"]),
+    }),
+    ask: (c, w = {}) => `Upload ${c.key} (${c.ct}) to bucket ${c.bucket}, tags ${c.tags.join(" and ")}, '${w.storage ?? c.storage}' storage, ${w.acl ?? c.acl} acl.`,
+    call: (c) => ({ bucket: c.bucket, key: c.key, content_type: c.ct, tags: c.tags, storage: c.storage, acl: c.acl }),
+    ops: {
+      renamedField: [() => ({ field: "key", to: "path" })],
+      newRequired: [(c, r) => ({ field: "checksum", schema: S("Content checksum"), value: `sha256:${digits(r, 4)}` })],
+      enumChange: [() => ({ field: "storage", to: ["hot", "cool", "cold"], map: { standard: "hot", infrequent: "cool", archive: "cold" } })],
+      splitEndpoint: [() => ({ field: "acl", children: { private: "objects.upload_private", public: "objects.upload_public" } })],
+      typeChange: [(c) => ({ field: "tags", to: S("Comma-separated tags"), value: c.tags.join(",") })],
+    },
   },
   {
     name: "search.query", v: "1.9.0", desc: "Run a keyword search.",
     props: { q: S("Query text"), limit: I("Max results"), filters: A("Filter expressions"), index: E("Index to search", ["docs", "code", "issues"]), scope: E("Result scope", ["org", "user"]) },
     req: ["q", "limit", "index", "scope"],
-    ask: "Search org-wide docs index for 'refund policy', limit 20, filter country:ca.",
-    call: { q: "refund policy", limit: 20, filters: ["country:ca"], index: "docs", scope: "org" },
-    rename: { field: "q", to: "query" },
-    addReq: { field: "locale", schema: S("Result locale"), value: "en-CA", phrase: "Use locale en-CA." },
-    enumUp: { field: "index", to: ["documentation", "source", "tickets"], use: "documentation", ask: "Search org-wide documentation index for 'refund policy', limit 20, filter country:ca." },
-    reType: { field: "filters", to: S("Comma-separated filters"), value: "country:ca" },
-    split: { field: "scope", children: { org: "search.query_org", user: "search.query_user" } },
+    vars: (r) => ({
+      q: pick(r, ["refund policy", "uptime sla", "api keys", "rate limits"]),
+      limit: int(r, 5, 50),
+      filter: `${pick(r, ["country", "lang", "type"])}:${pick(r, ["ca", "us", "de", "en", "docs"])}`,
+      index: pick(r, ["docs", "code", "issues"]),
+      scope: pick(r, ["org", "user"]),
+    }),
+    ask: (c, w = {}) => `Search the '${w.index ?? c.index}' index for '${c.q}', limit ${c.limit}, filter ${c.filter}, scope ${w.scope ?? c.scope}.`,
+    call: (c) => ({ q: c.q, limit: c.limit, filters: [c.filter], index: c.index, scope: c.scope }),
+    ops: {
+      renamedField: [() => ({ field: "q", to: "query" })],
+      newRequired: [(c, r) => ({ field: "locale", schema: S("Result locale"), value: pick(r, ["en-CA", "en-US", "fr-FR", "de-DE"]) })],
+      enumChange: [() => ({ field: "index", to: ["documentation", "source", "tickets"], map: { docs: "documentation", code: "source", issues: "tickets" } })],
+      splitEndpoint: [() => ({ field: "scope", children: { org: "search.query_org", user: "search.query_user" } })],
+      typeChange: [(c) => ({ field: "filters", to: S("Comma-separated filters"), value: c.filter })],
+    },
   },
   {
     name: "sms.send", v: "7.3.1", desc: "Send a text message.",
     props: { to: S("Recipient number"), from: S("Sender number"), body: S("Message body"), media: A("Media URLs"), priority: E("Send priority", ["standard", "express"]), channel: E("Bearer channel", ["sms", "mms"]) },
     req: ["to", "from", "body", "priority", "channel"],
-    ask: "Text +14165550100 from +14165550199 saying 'Your code is 4110.' with media https://img.example/x.png, express priority over sms.",
-    call: { to: "+14165550100", from: "+14165550199", body: "Your code is 4110.", media: ["https://img.example/x.png"], priority: "express", channel: "sms" },
-    rename: { field: "body", to: "message" },
-    addReq: { field: "app_id", schema: S("Sending application id"), value: "app-221", phrase: "Send under app id app-221." },
-    enumUp: { field: "priority", to: ["economy", "flash"], use: "flash", ask: "Text +14165550100 from +14165550199 saying 'Your code is 4110.' with media https://img.example/x.png, flash priority over sms." },
-    reType: { field: "media", to: S("Single media URL"), value: "https://img.example/x.png" },
-    split: { field: "channel", children: { sms: "sms.send_text", mms: "sms.send_media" } },
+    vars: (r) => ({
+      to: phone(r),
+      from: phone(r),
+      body: pick(r, [code(r), "Your package shipped.", "Appointment reminder.", "Delivery delayed by one day."]),
+      media: `https://img.example/${pick(r, ["x", "qr", "photo", "receipt"])}.png`,
+      priority: pick(r, ["standard", "express"]),
+      channel: pick(r, ["sms", "mms"]),
+    }),
+    ask: (c, w = {}) => `Text ${c.to} from ${c.from} saying '${c.body}' with media ${c.media}, '${w.priority ?? c.priority}' priority over ${w.channel ?? c.channel}.`,
+    call: (c) => ({ to: c.to, from: c.from, body: c.body, media: [c.media], priority: c.priority, channel: c.channel }),
+    ops: {
+      renamedField: [() => ({ field: "body", to: "message" })],
+      newRequired: [(c, r) => ({ field: "app_id", schema: S("Sending application id"), value: `app-${int(r, 100, 999)}` })],
+      enumChange: [() => ({ field: "priority", to: ["economy", "flash"], map: { standard: "economy", express: "flash" } })],
+      splitEndpoint: [() => ({ field: "channel", children: { sms: "sms.send_text", mms: "sms.send_media" } })],
+      typeChange: [(c) => ({ field: "media", to: S("Single media URL"), value: c.media })],
+    },
   },
   {
     name: "deploys.trigger", v: "2.2.0", desc: "Trigger a deployment.",
     props: { service: S("Service name"), ref: S("Git ref or tag"), replicas: I("Replica count"), notify: A("Notification channels"), env: E("Target environment", ["staging", "production"]), strategy: E("Rollout strategy", ["rolling", "bluegreen"]) },
     req: ["service", "ref", "replicas", "env", "strategy"],
-    ask: "Deploy api-gateway ref v2.14.0 with 3 replicas to production using a rolling strategy; notify #deploys.",
-    call: { service: "api-gateway", ref: "v2.14.0", replicas: 3, notify: ["#deploys"], env: "production", strategy: "rolling" },
-    rename: { field: "ref", to: "revision" },
-    addReq: { field: "ticket", schema: S("Change ticket id"), value: "CHG-1024", phrase: "Reference change ticket CHG-1024." },
-    enumUp: { field: "env", to: ["stage", "prod"], use: "prod", ask: "Deploy api-gateway ref v2.14.0 with 3 replicas to prod using a rolling strategy; notify #deploys." },
-    reType: { field: "replicas", to: S("Replica count as a string"), value: "3" },
-    split: { field: "strategy", children: { rolling: "deploys.trigger_rolling", bluegreen: "deploys.trigger_canary" } },
+    vars: (r) => ({
+      service: pick(r, ["api-gateway", "web-frontend", "worker-pool", "billing-svc"]),
+      ref: `v${int(r, 1, 5)}.${int(r, 0, 20)}.${int(r, 0, 9)}`,
+      replicas: int(r, 1, 5),
+      notify: pick(r, [["#deploys"], ["#ops", "#deploys"], ["#releases"]]),
+      env: pick(r, ["staging", "production"]),
+      strategy: pick(r, ["rolling", "bluegreen"]),
+    }),
+    ask: (c, w = {}) => `Deploy ${c.service} ref ${c.ref} with ${c.replicas} replicas to '${w.env ?? c.env}' using a ${w.strategy ?? c.strategy} strategy; notify ${c.notify.join(" and ")}.`,
+    call: (c) => ({ service: c.service, ref: c.ref, replicas: c.replicas, notify: c.notify, env: c.env, strategy: c.strategy }),
+    ops: {
+      renamedField: [() => ({ field: "ref", to: "revision" })],
+      newRequired: [(c, r) => ({ field: "ticket", schema: S("Change ticket id"), value: `CHG-${int(r, 1000, 9999)}` })],
+      enumChange: [() => ({ field: "env", to: ["stage", "prod"], map: { staging: "stage", production: "prod" } })],
+      splitEndpoint: [() => ({ field: "strategy", children: { rolling: "deploys.trigger_rolling", bluegreen: "deploys.trigger_bluegreen" } })],
+      typeChange: [(c) => ({ field: "replicas", to: S("Replica count as a string"), value: String(c.replicas) })],
+    },
   },
   {
     name: "contacts.update", v: "4.4.0", desc: "Update a CRM contact.",
     props: { contact_id: S("Contact id"), email: S("Email address"), phone: S("Phone number"), tags: A("Contact tags"), stage: E("Pipeline stage", ["lead", "prospect", "customer"]), owner: E("Owning team", ["sales", "support"]) },
     req: ["contact_id", "email", "stage", "owner"],
-    ask: "Update contact ct-904: email jae@foo.dev, phone +14165550011, tag vip, stage prospect, owner sales.",
-    call: { contact_id: "ct-904", email: "jae@foo.dev", phone: "+14165550011", tags: ["vip"], stage: "prospect", owner: "sales" },
-    rename: { field: "phone", to: "phone_number" },
-    addReq: { field: "source", schema: S("Attribution source"), value: "webinar-oct", phrase: "Set source to webinar-oct." },
-    enumUp: { field: "stage", to: ["new", "qualified", "won"], use: "qualified", ask: "Update contact ct-904: email jae@foo.dev, phone +14165550011, tag vip, stage qualified, owner sales." },
-    reType: { field: "tags", to: S("Comma-separated tags"), value: "vip" },
-    split: { field: "owner", children: { sales: "contacts.update_sales", support: "contacts.update_support" } },
+    vars: (r) => ({
+      contact: `ct-${int(r, 100, 999)}`,
+      email: email(r),
+      phone: phone(r),
+      tag: pick(r, ["vip", "trial", "churned", "enterprise"]),
+      stage: pick(r, ["lead", "prospect", "customer"]),
+      owner: pick(r, ["sales", "support"]),
+    }),
+    ask: (c, w = {}) => `Update contact ${c.contact}: email ${c.email}, phone ${c.phone}, tag ${c.tag}, stage '${w.stage ?? c.stage}', owner ${w.owner ?? c.owner}.`,
+    call: (c) => ({ contact_id: c.contact, email: c.email, phone: c.phone, tags: [c.tag], stage: c.stage, owner: c.owner }),
+    ops: {
+      renamedField: [() => ({ field: "phone", to: "phone_number" })],
+      newRequired: [(c, r) => ({ field: "source", schema: S("Attribution source"), value: pick(r, ["webinar-oct", "conf-2026", "referral", "ads"]) })],
+      enumChange: [() => ({ field: "stage", to: ["new", "qualified", "won"], map: { lead: "new", prospect: "qualified", customer: "won" } })],
+      splitEndpoint: [() => ({ field: "owner", children: { sales: "contacts.update_sales", support: "contacts.update_support" } })],
+      typeChange: [(c) => ({ field: "tags", to: S("Comma-separated tags"), value: c.tag })],
+    },
   },
   {
     name: "payments.refund", v: "1.5.2", desc: "Refund a captured payment.",
     props: { payment_id: S("Payment id"), amount: N("Amount in dollars"), reason: E("Refund reason", ["duplicate", "fraud", "requested"]), method: E("Refund destination", ["card", "balance"]) },
     req: ["payment_id", "amount", "reason", "method"],
-    ask: "Refund payment pay_7712 for $19.99, reason duplicate, back to card.",
-    call: { payment_id: "pay_7712", amount: 19.99, reason: "duplicate", method: "card" },
-    rename: { field: "payment_id", to: "transaction_id" },
-    addReq: { field: "note", schema: S("Refund note"), value: "double charge", phrase: "Attach note 'double charge'." },
-    enumUp: { field: "reason", to: ["accidental", "suspected_fraud", "customer_request"], use: "customer_request", ask: "Refund payment pay_7712 for $19.99, reason customer_request, back to card." },
-    reType: { field: "amount", to: I("Amount in cents"), value: 1999 },
-    split: { field: "method", children: { card: "payments.refund_card", balance: "payments.refund_balance" } },
+    vars: (r) => ({
+      payment: `pay_${int(r, 1000, 9999)}`,
+      amount: usd(r),
+      reason: pick(r, ["duplicate", "fraud", "requested"]),
+      method: pick(r, ["card", "balance"]),
+    }),
+    ask: (c, w = {}) => `Refund payment ${c.payment} for $${c.amount}, reason '${w.reason ?? c.reason}', back to ${w.method ?? c.method}.`,
+    call: (c) => ({ payment_id: c.payment, amount: c.amount, reason: c.reason, method: c.method }),
+    ops: {
+      renamedField: [() => ({ field: "payment_id", to: "transaction_id" })],
+      newRequired: [(c, r) => ({ field: "note", schema: S("Refund note"), value: pick(r, ["double charge", "customer request", "fraud review"]) })],
+      enumChange: [() => ({ field: "reason", to: ["accidental", "suspected_fraud", "customer_request"], map: { duplicate: "accidental", fraud: "suspected_fraud", requested: "customer_request" } })],
+      splitEndpoint: [() => ({ field: "method", children: { card: "payments.refund_card", balance: "payments.refund_balance" } })],
+      typeChange: [(c) => ({ field: "amount", to: I("Amount in cents"), value: Math.round(c.amount * 100) })],
+    },
   },
 ];
 
@@ -185,36 +309,35 @@ const spec = (name, desc, props, req, v) => ({
 });
 
 const OPERATORS = {
-  renamedField(t, v) {
-    const { field, to } = t.rename;
+  renamedField(t, c, m, v) {
+    const { field, to } = m;
     const props = Object.fromEntries(Object.entries(t.props).map(([k, s]) => [k === field ? to : k, s]));
-    const args = Object.fromEntries(Object.entries(t.call).map(([k, x]) => [k === field ? to : k, x]));
-    return { schemas: [spec(t.name, t.desc, props, t.req.map((r) => (r === field ? to : r)), v)], ask: t.ask, expected: { name: t.name, arguments: args } };
+    const args = Object.fromEntries(Object.entries(t.call(c)).map(([k, x]) => [k === field ? to : k, x]));
+    return { schemas: [spec(t.name, t.desc, props, t.req.map((r) => (r === field ? to : r)), v)], ask: t.ask(c), expected: { name: t.name, arguments: args } };
   },
-  newRequired(t, v) {
-    const { field, schema, value, phrase } = t.addReq;
+  newRequired(t, c, m, v) {
     return {
-      schemas: [spec(t.name, t.desc, { ...t.props, [field]: schema }, [...t.req, field], v)],
-      ask: `${t.ask} ${phrase}`, expected: { name: t.name, arguments: { ...t.call, [field]: value } },
+      schemas: [spec(t.name, t.desc, { ...t.props, [m.field]: m.schema }, [...t.req, m.field], v)],
+      ask: `${t.ask(c)} New required field '${m.field}': set it to ${JSON.stringify(m.value)}.`, expected: { name: t.name, arguments: { ...t.call(c), [m.field]: m.value } },
     };
   },
-  enumChange(t, v) {
-    const { field, to, use, ask } = t.enumUp;
-    const props = { ...t.props, [field]: { ...t.props[field], enum: to } };
-    return { schemas: [spec(t.name, t.desc, props, t.req, v)], ask, expected: { name: t.name, arguments: { ...t.call, [field]: use } } };
+  enumChange(t, c, m, v) {
+    const props = { ...t.props, [m.field]: { ...t.props[m.field], enum: m.to } };
+    const use = m.map[t.call(c)[m.field]];
+    return { schemas: [spec(t.name, t.desc, props, t.req, v)], ask: t.ask(c, { [m.field]: use }), expected: { name: t.name, arguments: { ...t.call(c), [m.field]: use } } };
   },
-  splitEndpoint(t, v) {
-    const { field, children } = t.split;
+  splitEndpoint(t, c, m, v) {
+    const { field, children } = m;
     const schemas = Object.entries(children).map(([value, name]) => {
       const props = clone(t.props); delete props[field];
       return spec(name, `${t.desc} (${field}: ${value})`, props, t.req.filter((r) => r !== field), v);
     });
-    const args = clone(t.call); const pick = args[field]; delete args[field];
-    return { schemas, ask: t.ask, expected: { name: children[pick], arguments: args } };
+    const args = clone(t.call(c)); const chosen = args[field]; delete args[field];
+    return { schemas, ask: t.ask(c), expected: { name: children[chosen], arguments: args } };
   },
-  typeChange(t, v) {
-    const { field, to, value } = t.reType;
-    return { schemas: [spec(t.name, t.desc, { ...t.props, [field]: to }, t.req, v)], ask: t.ask, expected: { name: t.name, arguments: { ...t.call, [field]: value } } };
+  typeChange(t, c, m, v) {
+    const value = typeof m.value === "function" ? m.value(c) : m.value;
+    return { schemas: [spec(t.name, t.desc, { ...t.props, [m.field]: m.to }, t.req, v)], ask: t.ask(c), expected: { name: t.name, arguments: { ...t.call(c), [m.field]: value } } };
   },
 };
 
@@ -233,10 +356,13 @@ function generate(seed, split) {
   const tasks = [];
   for (const [ti, t] of TOOLS.entries()) {
     for (const [ki, kind] of KINDS.entries()) {
+      const ctx = t.vars(rng);
+      const variants = t.ops[kind];
+      const mutation = variants[Math.floor(rng() * variants.length)](ctx, rng);
       const major = Number(t.v.split(".")[0]) + 1;
       const v = `${major}.${Math.floor(rng() * 3)}.${Math.floor(rng() * 5)}`;
-      const { schemas, ask, expected } = OPERATORS[kind](t, v);
-      const stale = { name: t.name, arguments: t.call };
+      const { schemas, ask, expected } = OPERATORS[kind](t, ctx, mutation, v);
+      const stale = { name: t.name, arguments: t.call(ctx) };
       if (canon(expected) === canon(stale)) throw new Error(`${t.name}/${kind}: expected equals stale`);
       tasks.push({
         id: `${prefix}-${String(ti * 5 + ki + 1).padStart(2, "0")}`, kind: "single",
@@ -259,5 +385,5 @@ if (split === "hidden" && seed === PUBLIC_SEED) throw new Error("hidden split mu
 const tasks = generate(seed, split);
 const file = split === "hidden" ? "data/tasks-hidden.jsonl" : "data/tasks.jsonl";
 await mkdir("data", { recursive: true });
-await writeFile(file, `${tasks.map((task) => JSON.stringify(task)).join("\n")}\n`);
-console.log(`generated ${tasks.length} ${split} tasks (seed ${seed}) -> ${file}`);
+await writeFile(file, tasks.map((task) => JSON.stringify(task)).join("\n") + "\n");
+console.log(`wrote ${tasks.length} ${split} tasks to ${file}`);
