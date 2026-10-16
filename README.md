@@ -4,85 +4,90 @@
 
 [AI Benchmark Index](https://aibenchmarkindex.com/benchmarks/benchmark-schema-mutation) · [npm](https://www.npmjs.com/package/benchmark-schema-mutation) · [API](#http-api) · [MCP](#model-context-protocol)
 
-benchmark-schema-mutation is an open-source AI model benchmark for tools tasks. It measures this behavior: Tool schemas change. Does the model call the current one?
-
-```bash
-npx benchmark-schema-mutation run --model offline --provider mock --json
-```
-
-```json
-{"model":"mock:1","mean":0.5,"totals":{"tasks":2,"passed":1,"failed":0}}
-```
-
-The starter data comes from a committed seeded generator. Seed 20261015 reproduces the public tasks.
-
-## Install
-
-benchmark-schema-mutation requires Node.js 20 or newer.
-
-```bash
-npm install benchmark-schema-mutation
-```
-
-## Run your first benchmark
-
-The mock provider needs no key or network access.
+APIs change under a model's feet. A field gets renamed, an enum gains new values, one endpoint splits into two — and the model has to decide between the schema in front of it and the one it memorized in training. benchmark-schema-mutation measures that choice: 60 tasks, each one a freshly migrated tool schema plus a user request, graded by exact match on the emitted JSON tool call.
 
 ```bash
 npx benchmark-schema-mutation run --model offline --provider mock
 ```
 
-A successful run prints two scored rows and a mean of 0.5.
-
-## How it works
-
 ```text
-tasks.jsonl -> model adapter -> deterministic grader -> report
-                         |-> CLI / SDK / MCP / HTTP API
+# Schema Mutation
+
+- Model: `mock:1`
+- Score: 50.0%
+- 95% CI: 38.3%–61.7%
+- Tasks: 60
 ```
 
-The runner keeps task order and records score, reason, latency, retries, usage, and cost when available.
+The mock provider answers half the tasks correctly by design, so 50% is the expected baseline — it proves the wiring, not a model. Real scores below.
 
-## Why it exists
+## Install
 
-General model leaderboards do not isolate tools behavior. This package keeps the task data, grading rules, and provenance together for inspection.
+Requires Node.js 20 or newer.
 
-## Compare
+```bash
+npm install benchmark-schema-mutation
+```
 
-Checked on 2026-10-15.
+## What a task looks like
 
-| Property | benchmark-schema-mutation | General chat leaderboard | Ad hoc prompt test |
-| --- | --- | --- | --- |
-| Target | Tool schemas change. Does the model call the current one? | Broad model quality | One local example |
-| Grading | Deterministic code | Varies | Manual |
-| Offline run | Mock provider | Varies | Varies |
-| Provenance | Package record | Varies | Usually absent |
+Each prompt shows only the *current* schema — here `issues.create` migrated from v3.2.0, where `title` became `subject`:
 
-## Coverage
+```json
+{"name": "issues.create",
+ "parameters": {"required": ["repo", "subject", "kind", "visibility"],
+  "properties": {"repo": "...", "subject": "...", "body": "...",
+                 "labels": "...", "kind": {"enum": ["bug","feature","chore"]},
+                 "visibility": {"enum": ["public","maintainers"]}}}}
+```
 
-| Surface | Status |
-| --- | --- |
-| single tasks | Included |
-| SDK | Included |
-| CLI | Included |
-| MCP server | Included |
-| HTTP API | Included |
+The user request is ordinary: *"In acme/widgets open a feature issue titled 'Dark mode' ..."*. The correct answer calls `issues.create` with `subject`. A model that answers with `title` used the memorized schema — that call is stored on the task as the stale reference, and the grader flags it.
 
-The E2E gate checks every listed surface against the package source.
+Five mutation kinds appear 12 times each:
 
-## Common use cases
+| Kind | Example mutation | Stale answer gives |
+| --- | --- | --- |
+| `renamedField` | `title` -> `subject` | old field name |
+| `newRequired` | required `severity` added | call without it |
+| `enumChange` | `kind: [bug,feature,chore]` -> `[defect,enhancement,task]` | old enum value |
+| `splitEndpoint` | `issues.create` -> `issues.create_public` / `issues.create_team` | old unsplit tool |
+| `typeChange` | `amount` dollars -> integer cents | dollar value |
 
-1. **Model developers:** compare adapters with the same seeded tasks.
-2. **Agent developers:** inspect task-level failures before changing prompts.
-3. **Release teams:** run the mock gate before publishing a data update.
-4. **Researchers:** export per-task scores for a reproducible analysis.
+## How it is graded
 
-## Features
+Deterministic, no judge. The grader extracts the last `{"name","arguments"}` object from the answer (prose and code fences are tolerated), canonicalises it — object keys sorted recursively — and compares it to the canonical expected call:
 
-- **Deterministic grading:** Each row includes a score and reason.
-- **Reproducible data:** A committed seeded script creates the public tasks.
-- **Share cards:** The `card` command writes a 1200×630 SVG.
-- **Provenance:** Code and Markdown carry the same source record.
+- **1** — exact match on tool name and arguments.
+- **0, `staleSchemaUsed`** — exact match against the pre-migration call.
+- **0** — otherwise, with the first differing path in the reason.
+
+`docs/grading.md` lists the ways this can go wrong — the failure modes were written before the grader, and `scripts/e2e.mjs` proves them: 60 canonical answers score 1, while empty, junk, replayed and stale answers all score 0.
+
+## Run it on a real model
+
+```bash
+export OPENROUTER_API_KEY=...
+npx benchmark-schema-mutation run --model anthropic/claude-sonnet-4 --provider openrouter
+```
+
+Any OpenAI-compatible endpoint works too, via `OPENAI_BASE_URL` and `OPENAI_API_KEY`. Reports carry a mean, a bootstrap 95% CI, per-task rows, and token cost. Group rows by `metadata.mutationKind` for the per-kind breakdown; the share of zero rows whose reason says `staleSchemaUsed` is the headline "it used the old schema" rate.
+
+There is no public leaderboard yet — no model runs have been published for this benchmark.
+
+## Where the data comes from
+
+Every task is synthetic, produced by the committed generator from 12 hand-authored base schemas resembling everyday SaaS tools. No third-party benchmark text is copied.
+
+```bash
+npm run generate:tasks                          # public split, seed 20261015
+node scripts/gen-tasks.mjs --seed 7 --split hidden   # held-out split, not committed
+```
+
+`data/PROVENANCE.md` records the licence (MIT), the hidden-split plan and the refresh cadence. Because the public split is committed, treat it as practice data; use a differently seeded hidden split for final comparisons.
+
+## Prior art
+
+The Berkeley Function-Calling Leaderboard (BFCL) measures function calling broadly; this benchmark isolates one failure mode — schema drift — with a deterministic canonical-JSON grader instead of AST checks or a judge, and it records the exact stale call so "used the memorized schema" is a measurable rate, not an anecdote.
 
 ## SDK
 
@@ -90,77 +95,34 @@ The E2E gate checks every listed surface against the package source.
 import { benchmark, run, score } from "benchmark-schema-mutation";
 ```
 
-`run(adapter, options)` creates a report. `score(taskId, submission)` grades one trace.
+`run(adapter, options)` produces a report; `score(taskId, submission)` grades one trace.
 
 ## CLI
 
-Commands are `list`, `show`, `run`, `score`, `card`, `provenance`, `index-entry`, `serve`, and `mcp`. Pass `--json` for machine-readable output.
+`list`, `show <task>`, `run`, `score`, `card`, `provenance`, `index-entry`, `serve`, `mcp`. Pass `--json` for machine-readable output. `card` writes a 1200×630 SVG share card.
 
 ## Model Context Protocol
-
-Start the MCP stdio server:
 
 ```bash
 npx benchmark-schema-mutation mcp
 ```
 
-Tools are `list_tasks`, `get_task`, `score_answer`, `run_benchmark`, and `get_provenance`.
+Tools: `list_tasks`, `get_task`, `score_answer`, `run_benchmark`, `get_provenance`. Only `run_benchmark` needs a key.
 
 ## HTTP API
 
-Import `handler` from `benchmark-schema-mutation/api`, or run `npx benchmark-schema-mutation serve`. Routes are `GET /health`, `GET /v1/tasks`, `GET /v1/tasks/:id`, `POST /v1/score`, `GET /v1/provenance`, and `GET /v1/index-entry`.
+Import `handler` from `benchmark-schema-mutation/api` (Node or Cloudflare Workers), or `npx benchmark-schema-mutation serve`. Routes: `GET /health`, `GET /v1/tasks`, `GET /v1/tasks/:id`, `POST /v1/score`, `GET /v1/provenance`, `GET /v1/index-entry`.
 
-## Data provenance
+## Limits and known weaknesses
 
-`data/tasks.jsonl` contains the public tasks. `data/PROVENANCE.md` names the generator, seed, licence, cutoff, and refresh steps. Run `npm run generate:tasks` to rebuild tasks and `npm run provenance` after a build.
-
-## Limits
-
-The starter tasks prove package wiring, not model quality. Replace them before publishing a real benchmark. Public tasks can enter training data. Keep a separately seeded hidden split for final comparisons. Remote providers can add cost and retain prompts under their own policies.
-
-## Integration guides
-
-- [TypeScript SDK integration](#sdk)
-- [Model Context Protocol integration](#model-context-protocol)
-- [HTTP API integration](#http-api)
+- The mutation catalogue is authored, so the 60 tasks cover five kinds well but not every real-world migration (deprecation warnings, paginated renames, OAuth scope shifts).
+- `staleSchemaUsed` fires only on an exact match with the recorded stale call; a half-adapted memorized answer is a lower-bound undercount.
+- Prompts name a `schema_version` but do not show the old schema — a model that hallucinates *no* schema knowledge and one that perfectly memorizes the old version both land on the same stale call; the grader cannot distinguish intent.
+- Array order matters in canonical comparison; schemas here never use unordered-set semantics.
 
 ## Status
 
-Version 0.1.0 is alpha. Task schemas and grading may change before 1.0. Report defects through the GitHub issue tracker. Public case studies are not yet published.
-
-## FAQ
-
-### What does benchmark-schema-mutation measure?
-
-benchmark-schema-mutation measures this behavior: Tool schemas change. Does the model call the current one? The committed grader defines the exact pass conditions.
-
-### Can benchmark-schema-mutation run offline?
-
-benchmark-schema-mutation runs end to end with the mock provider and no key. Real model runs need a configured provider.
-
-### Which providers work?
-
-benchmark-schema-mutation supports OpenRouter, an OpenAI-compatible base URL, and the offline mock adapter through benchmark-core.
-
-### Does benchmark-schema-mutation provide a hosted service?
-
-benchmark-schema-mutation provides a server you run. It does not provide a managed benchmark service.
-
-### Where do the tasks come from?
-
-benchmark-schema-mutation ships seeded synthetic starter tasks. The provenance file explains how to reproduce and refresh them.
-
-### How are answers graded?
-
-benchmark-schema-mutation uses exact match for single answers and simulator replay for episode traces. Model judging is off.
-
-### How is this different from a general leaderboard?
-
-benchmark-schema-mutation measures one named behavior with inspectable tasks and grading. General leaderboards combine broader capabilities.
-
-### Can I use a hidden split?
-
-benchmark-schema-mutation supports the same schema for public and hidden tasks. Keep hidden data outside the npm package and public repository.
+Version 0.1.0 is alpha. Task shape and grading may change before 1.0. Report defects through the [issue tracker](https://github.com/pooriaarab/benchmark-schema-mutation/issues).
 
 ## License
 
