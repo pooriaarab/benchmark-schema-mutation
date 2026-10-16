@@ -103,7 +103,50 @@ try {
   }
   assert.equal(enumOldWording, tasks.length / 5);
   graderPasses.enum_old_wording = enumOldWording;
+
+  // Equivalence pass: prose, code fences, key reordering, wire wrappers and
+  // string-encoded arguments must all score 1; foreign envelopes score 0.
+  let equivalent = 0;
+  for (const task of tasks) {
+    const call = JSON.parse(task.expected);
+    const reordered = JSON.stringify({ arguments: Object.fromEntries(Object.entries(call.arguments).reverse()), name: call.name });
+    const prose = `Here is the call:\n\`\`\`json\n${reordered}\n\`\`\`\nDone.`;
+    assert.equal((await postScore(task.id, { answer: prose })).value.score, 1);
+    const wire = JSON.stringify({ tool_calls: [{ id: "c1", type: "function", function: { name: call.name, arguments: JSON.stringify(call.arguments) } }] });
+    assert.equal((await postScore(task.id, { answer: wire })).value.score, 1);
+    const strArgs = JSON.stringify({ name: call.name, arguments: JSON.stringify(call.arguments) });
+    assert.equal((await postScore(task.id, { answer: strArgs })).value.score, 1);
+    const foreign = JSON.stringify({ tool: call.name, args: call.arguments });
+    assert.equal((await postScore(task.id, { answer: foreign })).value.score, 0);
+    equivalent += 1;
+  }
+  assert.equal(equivalent, tasks.length);
+  graderPasses.equivalent_answers = equivalent;
+
+  // Value-form pass: number folding, comma-list whitespace and equal ISO
+  // durations must score 1; string-typed numbers still score 0.
+  const intTask = tasks.find((t) => Object.values(JSON.parse(t.expected).arguments).some((v) => Number.isInteger(v)));
+  const intCall = JSON.parse(intTask.expected);
+  const intKey = Object.keys(intCall.arguments).find((k) => Number.isInteger(intCall.arguments[k]));
+  const intText = JSON.stringify(intCall);
+  assert.equal((await postScore(intTask.id, { answer: intText.replace(`:${intCall.arguments[intKey]}`, `:${intCall.arguments[intKey]}.0`) })).value.score, 1);
+  assert.equal((await postScore(intTask.id, { answer: intText.replace(`:${intCall.arguments[intKey]}`, `:"${intCall.arguments[intKey]}"`) })).value.score, 0);
+  graderPasses.number_folding = 2;
+  const commaTask = tasks.find((t) => Object.values(JSON.parse(t.expected).arguments).some((v) => typeof v === "string" && v.includes(",")));
+  const commaCall = JSON.parse(commaTask.expected);
+  const commaKey = Object.keys(commaCall.arguments).find((k) => typeof commaCall.arguments[k] === "string" && commaCall.arguments[k].includes(","));
+  commaCall.arguments[commaKey] = commaCall.arguments[commaKey].split(",").join(", ");
+  assert.equal((await postScore(commaTask.id, { answer: JSON.stringify(commaCall) })).value.score, 1);
+  graderPasses.comma_list_spacing = 1;
 } finally { if (server.exitCode === null) { server.kill("SIGTERM"); await once(server, "exit"); } }
+
+// Duration pass: no public task carries a duration argument, so grade a
+// synthetic task through the SDK to prove equal durations compare equal.
+const { benchmark: bench } = await import("../dist/index.js");
+const canonical = (v) => Array.isArray(v) ? `[${v.map(canonical).join(",")}]` : (v !== null && typeof v === "object" ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`).join(",")}}` : JSON.stringify(v));
+const durTask = { id: "e2e-duration", kind: "single", prompt: "", expected: canonical({ name: "events.create", arguments: { duration_min: "PT45M" } }), metadata: { mutationKind: "typeChange" } };
+assert.equal((await bench.score(durTask, { answer: '{"name":"events.create","arguments":{"duration_min":"PT0H45M"}}' })).score, 1);
+graderPasses.equal_durations = 1;
 
 // Hidden-split pass: a differently seeded split must produce different
 // expected calls and prompts, not just new version strings.
