@@ -20,7 +20,8 @@ class StarterEnvironment implements Environment {
 }
 export const benchmark = defineBenchmark({
   id: "benchmark-schema-mutation", name: "Schema Mutation", tagline: "Tool schemas change. Does the model call the current one?", tags: ["helpful"], category: "tools",
-  whatItMeasures: "Tool schemas change. Does the model call the current one?", version: "0.1.0", status: "alpha", loadTasks,
+  whatItMeasures: "Whether a model follows the current tool schema after a migration — renamed fields, new required fields, changed enums, split endpoints and type changes — instead of the version it memorized.",
+  version: "0.1.0", status: "alpha", loadTasks,
   async grade(task, submission, context) {
     if (task.kind === "single") return submission.answer === undefined ? { score: 0, reason: "Submission has no answer." } : exactMatch(task.expected ?? null, submission.answer);
     const state = await replay(new StarterEnvironment(), task, submission.toolLog ?? [], context.seed) as { finished?: boolean };
@@ -32,10 +33,12 @@ export const benchmark = defineBenchmark({
     bad: (task) => task.kind === "episode" ? [{ content: "Skipped the tool." }] : [],
   },
   provenance: [{
-    name: "Seeded starter task generator", kind: "synthetic", url: "https://github.com/pooriaarab/benchmark-schema-mutation/blob/main/scripts/gen-tasks.mjs",
-    licence: "MIT", howToGet: "Run `node scripts/gen-tasks.mjs` from the repository root.", retrievedAt: "2026-10-15T00:00:00.000Z",
-    contaminationNotes: "Public starter tasks generated with seed 20261015. Keep final evaluation tasks in a separately seeded hidden split.",
-    refresh: "Change the seed, run the generator, and review the JSONL diff.",
+    name: "Seeded schema-mutation task generator", kind: "synthetic", url: "https://github.com/pooriaarab/benchmark-schema-mutation/blob/main/scripts/gen-tasks.mjs",
+    licence: "MIT",
+    howToGet: "Run `node scripts/gen-tasks.mjs` for the public split (seed 20261015) or `node scripts/gen-tasks.mjs --seed <n> --split hidden` for a held-out split.",
+    retrievedAt: "2026-10-16T00:00:00.000Z",
+    contaminationNotes: "All 60 public tasks are synthetic mutations of 12 hand-authored base tool schemas. The hidden split uses a different seed and is never committed, so public tasks may enter training data without leaking final evaluation items.",
+    refresh: "Change the seed, rerun the generator, and review the JSONL diff. Rotate mutation parameters quarterly.",
   }],
-  gradingMethod: "Exact match for single answers; deterministic state replay for episodes.",
+  gradingMethod: "Canonical JSON equality on the tool name and arguments after normalisation; exact matches against the pre-mutation call are reported as staleSchemaUsed.",
 });
