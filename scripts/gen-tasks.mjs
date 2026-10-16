@@ -38,10 +38,24 @@ const TOOLS = [
     ask: (c, w = {}) => `In ${c.repo} open a '${w.kind ?? c.kind}' issue titled '${c.title}' with body '${c.body}', label ${c.label}, visible to ${w.visibility ?? c.visibility}.`,
     call: (c) => ({ repo: c.repo, title: c.title, body: c.body, labels: [c.label], kind: c.kind, visibility: c.visibility }),
     ops: {
-      renamedField: [() => ({ field: "title", to: "subject" })],
-      newRequired: [() => ({ field: "severity", schema: E("Triage severity", ["low", "medium", "high"]), value: "high" })],
-      enumChange: [() => ({ field: "kind", to: ["defect", "enhancement", "task"], map: { bug: "defect", feature: "enhancement", chore: "task" } })],
-      splitEndpoint: [() => ({ field: "visibility", children: { public: "issues.create_public", maintainers: "issues.create_team" } })],
+      renamedField: [
+        (c, r) => ({ field: "title", to: pick(r, ["subject", "headline", "name"]) }),
+        (c, r) => ({ field: "body", to: pick(r, ["details", "description", "content"]) }),
+        (c, r) => ({ field: "labels", to: pick(r, ["label_list", "tags"]) }),
+      ],
+      newRequired: [
+        (c, r) => ({ field: "severity", schema: E("Triage severity", ["low", "medium", "high"]), value: pick(r, ["low", "medium", "high"]) }),
+        (c, r) => ({ field: pick(r, ["milestone", "sprint"]), schema: S("Iteration name"), value: `iter-${int(r, 3, 40)}` }),
+      ],
+      enumChange: [
+        () => ({ field: "kind", to: ["defect", "enhancement", "task"], map: { bug: "defect", feature: "enhancement", chore: "task" } }),
+        () => ({ field: "kind", to: ["bug_report", "feature_request", "maintenance"], map: { bug: "bug_report", feature: "feature_request", chore: "maintenance" } }),
+        () => ({ field: "visibility", to: ["everyone", "restricted"], map: { public: "everyone", maintainers: "restricted" } }),
+      ],
+      splitEndpoint: [
+        () => ({ field: "visibility", children: { public: "issues.create_public", maintainers: "issues.create_team" } }),
+        () => ({ field: "kind", children: { bug: "issues.report_bug", feature: "issues.request_feature", chore: "issues.log_chore" } }),
+      ],
       typeChange: [(c) => ({ field: "labels", to: S("Comma-separated label names"), value: c.label })],
     },
   },
@@ -59,11 +73,28 @@ const TOOLS = [
     ask: (c, w = {}) => `Charge customer ${c.customer} ${c.amount} in '${w.currency ?? c.currency}' for '${c.description}' with ${w.capture ?? c.capture} capture.`,
     call: (c) => ({ customer: c.customer, amount: c.amount, currency: c.currency, capture: c.capture, description: c.description }),
     ops: {
-      renamedField: [() => ({ field: "description", to: "memo" })],
-      newRequired: [(c, r) => ({ field: "idempotency_key", schema: S("Unique key to retry safely"), value: `req-${int(r, 1000, 9999)}` })],
-      enumChange: [() => ({ field: "currency", to: ["USD", "EUR", "GBP", "JPY"], map: { usd: "USD", eur: "EUR", gbp: "GBP" } })],
-      splitEndpoint: [() => ({ field: "capture", children: { auto: "charges.create_capture", manual: "charges.authorize" } })],
-      typeChange: [(c) => ({ field: "amount", to: I("Amount in cents"), value: Math.round(c.amount * 100) })],
+      renamedField: [
+        (c, r) => ({ field: "description", to: pick(r, ["memo", "note", "statement_text"]) }),
+        (c, r) => ({ field: "customer", to: pick(r, ["customer_id", "account", "buyer"]) }),
+        (c, r) => ({ field: "amount", to: pick(r, ["total", "charge_amount"]) }),
+      ],
+      newRequired: [
+        (c, r) => ({ field: "idempotency_key", schema: S("Unique key to retry safely"), value: `req-${int(r, 1000, 9999)}` }),
+        (c, r) => ({ field: "receipt_email", schema: S("Where to send the receipt"), value: email(r) }),
+      ],
+      enumChange: [
+        () => ({ field: "currency", to: ["USD", "EUR", "GBP", "JPY"], map: { usd: "USD", eur: "EUR", gbp: "GBP" } }),
+        () => ({ field: "currency", to: ["usd_fiat", "eur_fiat", "gbp_fiat"], map: { usd: "usd_fiat", eur: "eur_fiat", gbp: "gbp_fiat" } }),
+        () => ({ field: "capture", to: ["immediate", "deferred"], map: { auto: "immediate", manual: "deferred" } }),
+      ],
+      splitEndpoint: [
+        () => ({ field: "capture", children: { auto: "charges.create_capture", manual: "charges.authorize" } }),
+        () => ({ field: "currency", children: { usd: "charges.create_usd", eur: "charges.create_eur", gbp: "charges.create_gbp" } }),
+      ],
+      typeChange: [
+        (c) => ({ field: "amount", to: I("Amount in cents"), value: Math.round(c.amount * 100) }),
+        (c) => ({ field: "amount", to: S("Amount as a decimal string"), value: c.amount.toFixed(2) }),
+      ],
     },
   },
   {
@@ -80,10 +111,24 @@ const TOOLS = [
     ask: (c, w = {}) => `Post '${c.text}' to ${c.channel} with attachment ${c.attachment} at '${w.priority ?? c.priority}' priority for ${w.audience ?? c.audience}.`,
     call: (c) => ({ channel: c.channel, text: c.text, attachments: [c.attachment], priority: c.priority, audience: c.audience }),
     ops: {
-      renamedField: [() => ({ field: "text", to: "body" })],
-      newRequired: [(c, r) => ({ field: "team_id", schema: S("Workspace team id"), value: `T${int(r, 2, 9)}${digits(r, 4)}` })],
-      enumChange: [() => ({ field: "priority", to: ["low", "elevated", "critical"], map: { normal: "low", high: "elevated", urgent: "critical" } })],
-      splitEndpoint: [() => ({ field: "audience", children: { everyone: "messages.post_channel", admins: "messages.post_admins" } })],
+      renamedField: [
+        (c, r) => ({ field: "text", to: pick(r, ["body", "message", "content"]) }),
+        (c, r) => ({ field: "channel", to: pick(r, ["room", "destination"]) }),
+        (c, r) => ({ field: "attachments", to: pick(r, ["files", "links", "media"]) }),
+      ],
+      newRequired: [
+        (c, r) => ({ field: "team_id", schema: S("Workspace team id"), value: `T${int(r, 2, 9)}${digits(r, 4)}` }),
+        (c, r) => ({ field: "workspace", schema: S("Workspace slug"), value: pick(r, ["acme", "globex", "initech"]) }),
+      ],
+      enumChange: [
+        () => ({ field: "priority", to: ["low", "elevated", "critical"], map: { normal: "low", high: "elevated", urgent: "critical" } }),
+        () => ({ field: "priority", to: ["p3", "p2", "p1"], map: { normal: "p3", high: "p2", urgent: "p1" } }),
+        () => ({ field: "audience", to: ["public_room", "staff_only"], map: { everyone: "public_room", admins: "staff_only" } }),
+      ],
+      splitEndpoint: [
+        () => ({ field: "audience", children: { everyone: "messages.post_channel", admins: "messages.post_admins" } }),
+        () => ({ field: "priority", children: { normal: "messages.post_normal", high: "messages.post_priority", urgent: "messages.post_urgent" } }),
+      ],
       typeChange: [(c) => ({ field: "attachments", to: S("Single attachment URL"), value: c.attachment })],
     },
   },
@@ -103,11 +148,28 @@ const TOOLS = [
     ask: (c, w = {}) => `On calendar ${c.calendar} create '${c.title}' starting ${c.start} lasting ${c.duration} minutes with attendees ${c.attendees.join(" and ")}, status '${w.status ?? c.status}', on the ${w.scope ?? c.scope} calendar.`,
     call: (c) => ({ calendar_id: c.calendar, title: c.title, start: c.start, duration_min: c.duration, attendees: c.attendees, status: c.status, scope: c.scope }),
     ops: {
-      renamedField: [() => ({ field: "title", to: "summary" })],
-      newRequired: [(c, r) => ({ field: "timezone", schema: S("IANA timezone"), value: pick(r, ["America/Toronto", "Europe/Berlin", "UTC"]) })],
-      enumChange: [() => ({ field: "status", to: ["accepted", "maybe", "declined"], map: { confirmed: "accepted", tentative: "maybe", cancelled: "declined" } })],
-      splitEndpoint: [() => ({ field: "scope", children: { personal: "events.create_personal", shared: "events.create_shared" } })],
-      typeChange: [(c) => ({ field: "duration_min", to: S("ISO 8601 duration"), value: `PT${c.duration}M` })],
+      renamedField: [
+        (c, r) => ({ field: "title", to: pick(r, ["summary", "name", "headline"]) }),
+        (c, r) => ({ field: "start", to: pick(r, ["start_time", "begins", "starts_at"]) }),
+        (c, r) => ({ field: "attendees", to: pick(r, ["invitees", "guests", "participants"]) }),
+      ],
+      newRequired: [
+        (c, r) => ({ field: "timezone", schema: S("IANA timezone"), value: pick(r, ["America/Toronto", "Europe/Berlin", "UTC"]) }),
+        (c, r) => ({ field: "reminder_min", schema: I("Minutes before to remind"), value: pick(r, [5, 10, 15, 30]) }),
+      ],
+      enumChange: [
+        () => ({ field: "status", to: ["accepted", "maybe", "declined"], map: { confirmed: "accepted", tentative: "maybe", cancelled: "declined" } }),
+        () => ({ field: "status", to: ["going", "uncertain", "out"], map: { confirmed: "going", tentative: "uncertain", cancelled: "out" } }),
+        () => ({ field: "scope", to: ["private", "team"], map: { personal: "private", shared: "team" } }),
+      ],
+      splitEndpoint: [
+        () => ({ field: "scope", children: { personal: "events.create_personal", shared: "events.create_shared" } }),
+        () => ({ field: "status", children: { confirmed: "events.create_confirmed", tentative: "events.create_tentative", cancelled: "events.create_cancelled" } }),
+      ],
+      typeChange: [
+        (c) => ({ field: "duration_min", to: S("ISO 8601 duration"), value: `PT${c.duration}M` }),
+        (c) => ({ field: "attendees", to: S("Comma-separated attendee emails"), value: c.attendees.join(",") }),
+      ],
     },
   },
   {
@@ -125,10 +187,24 @@ const TOOLS = [
     ask: (c, w = {}) => `Open a ticket in the '${w.queue ?? c.queue}' queue for ${c.requester} titled '${c.subject}' saying '${c.comment}', tag ${c.tag}, priority '${w.priority ?? c.priority}'.`,
     call: (c) => ({ requester: c.requester, subject: c.subject, comment: c.comment, tags: [c.tag], priority: c.priority, queue: c.queue }),
     ops: {
-      renamedField: [() => ({ field: "subject", to: "title" })],
-      newRequired: [(c, r) => ({ field: "brand_id", schema: I("Brand to file under"), value: int(r, 3, 9) })],
-      enumChange: [() => ({ field: "priority", to: ["p3", "p2", "p1", "p0"], map: { low: "p3", normal: "p2", high: "p1", urgent: "p0" } })],
-      splitEndpoint: [() => ({ field: "queue", children: { support: "tickets.open_support", billing: "tickets.open_billing" } })],
+      renamedField: [
+        (c, r) => ({ field: "subject", to: pick(r, ["title", "headline", "summary"]) }),
+        (c, r) => ({ field: "comment", to: pick(r, ["body", "message", "description"]) }),
+        (c, r) => ({ field: "requester", to: pick(r, ["email", "customer", "from"]) }),
+      ],
+      newRequired: [
+        (c, r) => ({ field: "brand_id", schema: I("Brand to file under"), value: int(r, 3, 9) }),
+        (c, r) => ({ field: "product", schema: S("Product area"), value: pick(r, ["billing", "mobile", "api"]) }),
+      ],
+      enumChange: [
+        () => ({ field: "priority", to: ["p3", "p2", "p1", "p0"], map: { low: "p3", normal: "p2", high: "p1", urgent: "p0" } }),
+        () => ({ field: "priority", to: ["minor", "standard", "major", "blocker"], map: { low: "minor", normal: "standard", high: "major", urgent: "blocker" } }),
+        () => ({ field: "queue", to: ["helpdesk", "accounts"], map: { support: "helpdesk", billing: "accounts" } }),
+      ],
+      splitEndpoint: [
+        () => ({ field: "queue", children: { support: "tickets.open_support", billing: "tickets.open_billing" } }),
+        () => ({ field: "priority", children: { low: "tickets.open_low", normal: "tickets.open_normal", high: "tickets.open_high", urgent: "tickets.open_urgent" } }),
+      ],
       typeChange: [(c) => ({ field: "tags", to: S("Comma-separated tags"), value: c.tag })],
     },
   },
@@ -147,11 +223,28 @@ const TOOLS = [
     ask: (c, w = {}) => `Email ${c.to} subject '${c.subject}' body '${c.body}', cc ${c.cc}, '${w.importance ?? c.importance}' importance, ${w.audience ?? c.audience} audience.`,
     call: (c) => ({ to: c.to, subject: c.subject, body: c.body, cc: [c.cc], importance: c.importance, audience: c.audience }),
     ops: {
-      renamedField: [() => ({ field: "body", to: "html" })],
-      newRequired: [(c, r) => ({ field: "campaign_id", schema: S("Campaign tag"), value: `cmp-${int(r, 10, 99)}` })],
-      enumChange: [() => ({ field: "importance", to: ["routine", "priority"], map: { normal: "routine", high: "priority" } })],
-      splitEndpoint: [() => ({ field: "audience", children: { customer: "emails.send_customer", internal: "emails.send_internal" } })],
-      typeChange: [(c) => ({ field: "cc", to: S("Comma-separated CC addresses"), value: c.cc })],
+      renamedField: [
+        (c, r) => ({ field: "body", to: pick(r, ["html", "text", "message"]) }),
+        (c, r) => ({ field: "subject", to: pick(r, ["headline", "title"]) }),
+        (c, r) => ({ field: "to", to: pick(r, ["recipient", "address"]) }),
+      ],
+      newRequired: [
+        (c, r) => ({ field: "campaign_id", schema: S("Campaign tag"), value: `cmp-${int(r, 10, 99)}` }),
+        (c, r) => ({ field: "reply_to", schema: S("Reply-to address"), value: email(r) }),
+      ],
+      enumChange: [
+        () => ({ field: "importance", to: ["routine", "priority"], map: { normal: "routine", high: "priority" } }),
+        () => ({ field: "importance", to: ["low_flag", "flagged"], map: { normal: "low_flag", high: "flagged" } }),
+        () => ({ field: "audience", to: ["external", "staff"], map: { customer: "external", internal: "staff" } }),
+      ],
+      splitEndpoint: [
+        () => ({ field: "audience", children: { customer: "emails.send_customer", internal: "emails.send_internal" } }),
+        () => ({ field: "importance", children: { normal: "emails.send_normal", high: "emails.send_urgent" } }),
+      ],
+      typeChange: [
+        (c) => ({ field: "cc", to: S("Comma-separated CC addresses"), value: c.cc }),
+        (c) => ({ field: "to", to: A("Recipient addresses"), value: [c.to] }),
+      ],
     },
   },
   {
@@ -168,10 +261,24 @@ const TOOLS = [
     ask: (c, w = {}) => `Upload ${c.key} (${c.ct}) to bucket ${c.bucket}, tags ${c.tags.join(" and ")}, '${w.storage ?? c.storage}' storage, ${w.acl ?? c.acl} acl.`,
     call: (c) => ({ bucket: c.bucket, key: c.key, content_type: c.ct, tags: c.tags, storage: c.storage, acl: c.acl }),
     ops: {
-      renamedField: [() => ({ field: "key", to: "path" })],
-      newRequired: [(c, r) => ({ field: "checksum", schema: S("Content checksum"), value: `sha256:${digits(r, 4)}` })],
-      enumChange: [() => ({ field: "storage", to: ["hot", "cool", "cold"], map: { standard: "hot", infrequent: "cool", archive: "cold" } })],
-      splitEndpoint: [() => ({ field: "acl", children: { private: "objects.upload_private", public: "objects.upload_public" } })],
+      renamedField: [
+        (c, r) => ({ field: "key", to: pick(r, ["path", "object_key", "filename"]) }),
+        (c, r) => ({ field: "bucket", to: pick(r, ["container", "vault"]) }),
+        (c, r) => ({ field: "content_type", to: pick(r, ["mime_type", "media_type"]) }),
+      ],
+      newRequired: [
+        (c, r) => ({ field: "checksum", schema: S("Content checksum"), value: `sha256:${digits(r, 4)}` }),
+        (c, r) => ({ field: "region", schema: S("Storage region"), value: pick(r, ["us-east-1", "eu-west-1", "ca-central-1"]) }),
+      ],
+      enumChange: [
+        () => ({ field: "storage", to: ["hot", "cool", "cold"], map: { standard: "hot", infrequent: "cool", archive: "cold" } }),
+        () => ({ field: "storage", to: ["frequent", "rare", "frozen"], map: { standard: "frequent", infrequent: "rare", archive: "frozen" } }),
+        () => ({ field: "acl", to: ["restricted", "open"], map: { private: "restricted", public: "open" } }),
+      ],
+      splitEndpoint: [
+        () => ({ field: "acl", children: { private: "objects.upload_private", public: "objects.upload_public" } }),
+        () => ({ field: "storage", children: { standard: "objects.upload_standard", infrequent: "objects.upload_infrequent", archive: "objects.upload_archive" } }),
+      ],
       typeChange: [(c) => ({ field: "tags", to: S("Comma-separated tags"), value: c.tags.join(",") })],
     },
   },
@@ -189,11 +296,28 @@ const TOOLS = [
     ask: (c, w = {}) => `Search the '${w.index ?? c.index}' index for '${c.q}', limit ${c.limit}, filter ${c.filter}, scope ${w.scope ?? c.scope}.`,
     call: (c) => ({ q: c.q, limit: c.limit, filters: [c.filter], index: c.index, scope: c.scope }),
     ops: {
-      renamedField: [() => ({ field: "q", to: "query" })],
-      newRequired: [(c, r) => ({ field: "locale", schema: S("Result locale"), value: pick(r, ["en-CA", "en-US", "fr-FR", "de-DE"]) })],
-      enumChange: [() => ({ field: "index", to: ["documentation", "source", "tickets"], map: { docs: "documentation", code: "source", issues: "tickets" } })],
-      splitEndpoint: [() => ({ field: "scope", children: { org: "search.query_org", user: "search.query_user" } })],
-      typeChange: [(c) => ({ field: "filters", to: S("Comma-separated filters"), value: c.filter })],
+      renamedField: [
+        (c, r) => ({ field: "q", to: pick(r, ["query", "term", "text"]) }),
+        (c, r) => ({ field: "limit", to: pick(r, ["max_results", "top_k", "count"]) }),
+        (c, r) => ({ field: "filters", to: pick(r, ["constraints", "clauses"]) }),
+      ],
+      newRequired: [
+        (c, r) => ({ field: "locale", schema: S("Result locale"), value: pick(r, ["en-CA", "en-US", "fr-FR", "de-DE"]) }),
+        (c, r) => ({ field: "tenant", schema: S("Tenant id"), value: `tn-${int(r, 10, 99)}` }),
+      ],
+      enumChange: [
+        () => ({ field: "index", to: ["documentation", "source", "tickets"], map: { docs: "documentation", code: "source", issues: "tickets" } }),
+        () => ({ field: "index", to: ["manual", "repo", "support"], map: { docs: "manual", code: "repo", issues: "support" } }),
+        () => ({ field: "scope", to: ["organization", "personal"], map: { org: "organization", user: "personal" } }),
+      ],
+      splitEndpoint: [
+        () => ({ field: "scope", children: { org: "search.query_org", user: "search.query_user" } }),
+        () => ({ field: "index", children: { docs: "search.query_docs", code: "search.query_code", issues: "search.query_issues" } }),
+      ],
+      typeChange: [
+        (c) => ({ field: "filters", to: S("Comma-separated filters"), value: c.filter }),
+        (c) => ({ field: "limit", to: S("Max results as a string"), value: String(c.limit) }),
+      ],
     },
   },
   {
@@ -211,10 +335,24 @@ const TOOLS = [
     ask: (c, w = {}) => `Text ${c.to} from ${c.from} saying '${c.body}' with media ${c.media}, '${w.priority ?? c.priority}' priority over ${w.channel ?? c.channel}.`,
     call: (c) => ({ to: c.to, from: c.from, body: c.body, media: [c.media], priority: c.priority, channel: c.channel }),
     ops: {
-      renamedField: [() => ({ field: "body", to: "message" })],
-      newRequired: [(c, r) => ({ field: "app_id", schema: S("Sending application id"), value: `app-${int(r, 100, 999)}` })],
-      enumChange: [() => ({ field: "priority", to: ["economy", "flash"], map: { standard: "economy", express: "flash" } })],
-      splitEndpoint: [() => ({ field: "channel", children: { sms: "sms.send_text", mms: "sms.send_media" } })],
+      renamedField: [
+        (c, r) => ({ field: "body", to: pick(r, ["message", "text"]) }),
+        (c, r) => ({ field: "media", to: pick(r, ["attachments", "images"]) }),
+        (c, r) => ({ field: "to", to: pick(r, ["recipient", "number"]) }),
+      ],
+      newRequired: [
+        (c, r) => ({ field: "app_id", schema: S("Sending application id"), value: `app-${int(r, 100, 999)}` }),
+        (c, r) => ({ field: "campaign", schema: S("Campaign slug"), value: pick(r, ["otp", "alerts", "marketing"]) }),
+      ],
+      enumChange: [
+        () => ({ field: "priority", to: ["economy", "flash"], map: { standard: "economy", express: "flash" } }),
+        () => ({ field: "priority", to: ["bulk", "instant"], map: { standard: "bulk", express: "instant" } }),
+        () => ({ field: "channel", to: ["text", "rich"], map: { sms: "text", mms: "rich" } }),
+      ],
+      splitEndpoint: [
+        () => ({ field: "channel", children: { sms: "sms.send_text", mms: "sms.send_media" } }),
+        () => ({ field: "priority", children: { standard: "sms.send_standard", express: "sms.send_express" } }),
+      ],
       typeChange: [(c) => ({ field: "media", to: S("Single media URL"), value: c.media })],
     },
   },
@@ -233,10 +371,24 @@ const TOOLS = [
     ask: (c, w = {}) => `Deploy ${c.service} ref ${c.ref} with ${c.replicas} replicas to '${w.env ?? c.env}' using a ${w.strategy ?? c.strategy} strategy; notify ${c.notify.join(" and ")}.`,
     call: (c) => ({ service: c.service, ref: c.ref, replicas: c.replicas, notify: c.notify, env: c.env, strategy: c.strategy }),
     ops: {
-      renamedField: [() => ({ field: "ref", to: "revision" })],
-      newRequired: [(c, r) => ({ field: "ticket", schema: S("Change ticket id"), value: `CHG-${int(r, 1000, 9999)}` })],
-      enumChange: [() => ({ field: "env", to: ["stage", "prod"], map: { staging: "stage", production: "prod" } })],
-      splitEndpoint: [() => ({ field: "strategy", children: { rolling: "deploys.trigger_rolling", bluegreen: "deploys.trigger_bluegreen" } })],
+      renamedField: [
+        (c, r) => ({ field: "ref", to: pick(r, ["revision", "version", "commit"]) }),
+        (c, r) => ({ field: "replicas", to: pick(r, ["count", "instances"]) }),
+        (c, r) => ({ field: "service", to: pick(r, ["app", "workload"]) }),
+      ],
+      newRequired: [
+        (c, r) => ({ field: "ticket", schema: S("Change ticket id"), value: `CHG-${int(r, 1000, 9999)}` }),
+        (c, r) => ({ field: "approver", schema: S("Approving manager"), value: email(r) }),
+      ],
+      enumChange: [
+        () => ({ field: "env", to: ["stage", "prod"], map: { staging: "stage", production: "prod" } }),
+        () => ({ field: "env", to: ["prelive", "live"], map: { staging: "prelive", production: "live" } }),
+        () => ({ field: "strategy", to: ["gradual", "canary"], map: { rolling: "gradual", bluegreen: "canary" } }),
+      ],
+      splitEndpoint: [
+        () => ({ field: "strategy", children: { rolling: "deploys.trigger_rolling", bluegreen: "deploys.trigger_bluegreen" } }),
+        () => ({ field: "env", children: { staging: "deploys.trigger_staging", production: "deploys.trigger_production" } }),
+      ],
       typeChange: [(c) => ({ field: "replicas", to: S("Replica count as a string"), value: String(c.replicas) })],
     },
   },
@@ -255,10 +407,24 @@ const TOOLS = [
     ask: (c, w = {}) => `Update contact ${c.contact}: email ${c.email}, phone ${c.phone}, tag ${c.tag}, stage '${w.stage ?? c.stage}', owner ${w.owner ?? c.owner}.`,
     call: (c) => ({ contact_id: c.contact, email: c.email, phone: c.phone, tags: [c.tag], stage: c.stage, owner: c.owner }),
     ops: {
-      renamedField: [() => ({ field: "phone", to: "phone_number" })],
-      newRequired: [(c, r) => ({ field: "source", schema: S("Attribution source"), value: pick(r, ["webinar-oct", "conf-2026", "referral", "ads"]) })],
-      enumChange: [() => ({ field: "stage", to: ["new", "qualified", "won"], map: { lead: "new", prospect: "qualified", customer: "won" } })],
-      splitEndpoint: [() => ({ field: "owner", children: { sales: "contacts.update_sales", support: "contacts.update_support" } })],
+      renamedField: [
+        (c, r) => ({ field: "phone", to: pick(r, ["phone_number", "mobile", "tel"]) }),
+        (c, r) => ({ field: "email", to: pick(r, ["email_address", "mail"]) }),
+        (c, r) => ({ field: "stage", to: pick(r, ["pipeline_stage", "phase"]) }),
+      ],
+      newRequired: [
+        (c, r) => ({ field: "source", schema: S("Attribution source"), value: pick(r, ["webinar-oct", "conf-2026", "referral", "ads"]) }),
+        (c, r) => ({ field: "region", schema: S("Sales region"), value: pick(r, ["emea", "na", "apac"]) }),
+      ],
+      enumChange: [
+        () => ({ field: "stage", to: ["new", "qualified", "won"], map: { lead: "new", prospect: "qualified", customer: "won" } }),
+        () => ({ field: "stage", to: ["cold", "warm", "closed"], map: { lead: "cold", prospect: "warm", customer: "closed" } }),
+        () => ({ field: "owner", to: ["revenue", "care"], map: { sales: "revenue", support: "care" } }),
+      ],
+      splitEndpoint: [
+        () => ({ field: "owner", children: { sales: "contacts.update_sales", support: "contacts.update_support" } }),
+        () => ({ field: "stage", children: { lead: "contacts.update_lead", prospect: "contacts.update_prospect", customer: "contacts.update_customer" } }),
+      ],
       typeChange: [(c) => ({ field: "tags", to: S("Comma-separated tags"), value: c.tag })],
     },
   },
@@ -275,10 +441,24 @@ const TOOLS = [
     ask: (c, w = {}) => `Refund payment ${c.payment} for $${c.amount}, reason '${w.reason ?? c.reason}', back to ${w.method ?? c.method}.`,
     call: (c) => ({ payment_id: c.payment, amount: c.amount, reason: c.reason, method: c.method }),
     ops: {
-      renamedField: [() => ({ field: "payment_id", to: "transaction_id" })],
-      newRequired: [(c, r) => ({ field: "note", schema: S("Refund note"), value: pick(r, ["double charge", "customer request", "fraud review"]) })],
-      enumChange: [() => ({ field: "reason", to: ["accidental", "suspected_fraud", "customer_request"], map: { duplicate: "accidental", fraud: "suspected_fraud", requested: "customer_request" } })],
-      splitEndpoint: [() => ({ field: "method", children: { card: "payments.refund_card", balance: "payments.refund_balance" } })],
+      renamedField: [
+        (c, r) => ({ field: "payment_id", to: pick(r, ["transaction_id", "charge_id"]) }),
+        (c, r) => ({ field: "reason", to: pick(r, ["cause", "explanation"]) }),
+        (c, r) => ({ field: "amount", to: pick(r, ["total", "refund_amount"]) }),
+      ],
+      newRequired: [
+        (c, r) => ({ field: "note", schema: S("Refund note"), value: pick(r, ["double charge", "customer request", "fraud review"]) }),
+        (c, r) => ({ field: "agent_id", schema: S("Agent issuing the refund"), value: `agt-${int(r, 10, 99)}` }),
+      ],
+      enumChange: [
+        () => ({ field: "reason", to: ["accidental", "suspected_fraud", "customer_request"], map: { duplicate: "accidental", fraud: "suspected_fraud", requested: "customer_request" } }),
+        () => ({ field: "reason", to: ["duplicate_charge", "abuse", "buyer_asked"], map: { duplicate: "duplicate_charge", fraud: "abuse", requested: "buyer_asked" } }),
+        () => ({ field: "method", to: ["source", "funds"], map: { card: "source", balance: "funds" } }),
+      ],
+      splitEndpoint: [
+        () => ({ field: "method", children: { card: "payments.refund_card", balance: "payments.refund_balance" } }),
+        () => ({ field: "reason", children: { duplicate: "payments.refund_duplicate", fraud: "payments.refund_fraud", requested: "payments.refund_requested" } }),
+      ],
       typeChange: [(c) => ({ field: "amount", to: I("Amount in cents"), value: Math.round(c.amount * 100) })],
     },
   },
