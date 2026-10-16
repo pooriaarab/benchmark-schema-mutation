@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { createHandler, type Benchmark, type Task } from "benchmark-core";
 import { benchmark, benchmarkForTasksFile, resolveAllowedTasksPath } from "./benchmark.js";
 
@@ -41,7 +42,9 @@ export function createApiHandler(bench: Benchmark<Task> = benchmark): (request: 
     let handler = alternates.get(resolved);
     if (handler === undefined) {
       handler = createHandler(benchmarkForTasksFile(resolved));
-      alternates.set(resolved, handler);
+      // Bare names resolve inside data/ without an allow-list, so cache only
+      // when the file exists; otherwise the map grows one entry per request.
+      if (existsSync(resolved)) alternates.set(resolved, handler);
     }
     return handler(request);
   };
