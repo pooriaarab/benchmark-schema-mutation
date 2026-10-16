@@ -113,6 +113,10 @@ Tools: `list_tasks`, `get_task`, `score_answer`, `run_benchmark`, `get_provenanc
 
 Import `handler` from `benchmark-schema-mutation/api` (Node or Cloudflare Workers), or `npx benchmark-schema-mutation serve`. Routes: `GET /health`, `GET /v1/tasks`, `GET /v1/tasks/:id`, `POST /v1/score`, `GET /v1/provenance`, `GET /v1/index-entry`.
 
+## Alternate task files
+
+Every surface accepts a JSONL task file besides the shipped public split: `--tasks <path>` on any CLI command, `{ tasks: "<path>" }` on the SDK `run`/`score`, `?tasks=<path>` on API routes (or `"tasks"` in the `POST /v1/score` body), and a `tasks` argument on the MCP tools. Remote surfaces resolve bare names inside the package `data/` directory and anything else only when listed in `BENCHMARK_SCHEMA_MUTATION_TASKS_ALLOW` (colon-separated), so a held-out split stays opt-in.
+
 ## Limits and known weaknesses
 
 - The mutation catalogue is authored, so the 60 tasks cover five kinds well but not every real-world migration (deprecation warnings, paginated renames, OAuth scope shifts).
