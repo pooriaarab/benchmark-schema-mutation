@@ -1,0 +1,12 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.pooriaarab/benchmark-schema-mutation",
+  "description": "Tool schemas change. Does the model call the current one?",
+  "version": "0.1.0",
+  "repository": { "url": "https://github.com/pooriaarab/benchmark-schema-mutation", "source": "github" },
+  "packages": [{
+    "registryType": "npm", "registryBaseUrl": "https://registry.npmjs.org", "identifier": "benchmark-schema-mutation", "version": "0.1.0",
+    "transport": { "type": "stdio" }, "runtimeHint": "npx",
+    "packageArguments": [{ "type": "positional", "valueHint": "subcommand", "value": "mcp" }]
+  }]
+}
