@@ -56,6 +56,13 @@ schema) scores 0 and is flagged `staleSchemaUsed` in the reason and details.
 10. **Non-JSON answers.** Empty strings, apologies, refusal text, or tool
     calls written in Python/TypeScript syntax fail extraction and score 0
     with a "not valid JSON" reason.
+11. **Non-string answers.** `submission.answer` is typed `string`, but the
+    SDK surface (`score()`) accepts untyped JSON — `null`, numbers, objects.
+    The grader type-checks before parsing and scores 0. (`POST /v1/score`
+    already rejects non-string answers with a request error.)
+12. **Pathological nesting.** A very deeply nested `arguments` value can
+    exhaust the stack inside canonicalisation; it is caught and scores 0
+    rather than crashing the scorer.
 
 ## What scores what
 

@@ -103,6 +103,18 @@ try {
   }
 } finally { await client.close(); }
 
+// SDK pass: non-string answers reach the grader through score(), not the API.
+const { score: scoreOne } = await import("../dist/index.js");
+let nonString = 0;
+for (const answer of [null, 42, { name: "x" }, ["a", "b"]]) {
+  const result = await scoreOne(first, { answer });
+  assert.equal(result.score, 0);
+  nonString += 1;
+}
+const deep = `{"name":"issues.create","arguments":{"x":${"[".repeat(5000)}${"]".repeat(5000)}}}`;
+assert.equal((await scoreOne(first, { answer: deep })).score, 0);
+graderPasses.non_string_answers = nonString + 1;
+
 const byId = new Map(tasks.map((task) => [task.id, task]));
 const perKind = {};
 for (const row of report.rows) {
