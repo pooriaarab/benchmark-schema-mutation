@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 
 const PUBLIC_SEED = 20261015;
 const KINDS = ["renamedField", "newRequired", "enumChange", "splitEndpoint", "typeChange"];
@@ -571,6 +571,9 @@ const tasks = generate(seed, split);
 // Hidden output defaults to .hidden/ so it is gitignored and, unlike
 // data/, never inside the npm `files` list -- the tarball cannot leak it.
 const file = flag("--out") ?? (split === "hidden" ? ".hidden/tasks-hidden.jsonl" : "data/tasks.jsonl");
+// A hidden --out under data/ would sit inside the npm `files` list under a
+// name the e2e pack guard does not match, so refuse it outright.
+if (split === "hidden" && resolve(file).startsWith(`${resolve("data")}${sep}`)) throw new Error("hidden --out must not write inside data/ (it would ship to npm)");
 await mkdir(dirname(file), { recursive: true });
 await writeFile(file, tasks.map((task) => JSON.stringify(task)).join("\n") + "\n");
 console.log(`wrote ${tasks.length} ${split} tasks to ${file}`);
