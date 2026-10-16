@@ -1,10 +1,14 @@
 # benchmark-schema-mutation
 
-> Tool schemas change. Does the model call the current one?
+> Measures whether a model calls the current tool schema after a migration — renamed fields, new required fields, changed enums, split endpoints, type changes — instead of the version it memorized. 60 single tasks, deterministic canonical-JSON grading, no judge.
 
 Package: https://www.npmjs.com/package/benchmark-schema-mutation
 Repository: https://github.com/pooriaarab/benchmark-schema-mutation
 Directory: https://aibenchmarkindex.com/benchmarks/benchmark-schema-mutation
+
+## Tasks
+
+Each task pairs a mutated OpenAPI/MCP-style tool schema with a user request; the model returns `{"name","arguments"}`. Answers matching the recorded pre-migration call score 0 and are flagged `staleSchemaUsed`. Regenerate with `node scripts/gen-tasks.mjs`; a `--split hidden` mode writes a held-out set from a different seed.
 
 ## Exports
 
@@ -12,8 +16,8 @@ The root exports `benchmark`, `run`, and `score`. `benchmark-schema-mutation/api
 
 ## Commands
 
-The CLI supports list, show, run, score, card, provenance, index-entry, serve, and mcp. Use the mock provider for offline verification.
+The CLI supports list, show, run, score, card, provenance, index-entry, serve, and mcp. Use `--provider mock` for offline verification; OpenRouter and OpenAI-compatible endpoints are supported.
 
 ## Verification
 
-Run `npm run ci:local`. The report is `artifacts/e2e-report.json`.
+Run `npm run ci:local`. The report is `artifacts/e2e-report.json`, including a per-mutation-kind breakdown and the staleSchemaUsed rate.
