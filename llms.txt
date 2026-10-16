@@ -20,4 +20,4 @@ The CLI supports list, show, run, score, card, provenance, index-entry, serve, a
 
 ## Verification
 
-Run `npm run ci:local`. The report is `artifacts/e2e-report.json`, including a per-mutation-kind breakdown and the staleSchemaUsed rate.
+Run `npm run ci:local`. The report is `artifacts/e2e-report.json`. Run reports carry per-row `details`, a `perMutationKind` breakdown and `staleSchemaUsedRate`.

@@ -19,6 +19,19 @@ assert.equal(report.rows.length, tasks.length);
 assert.ok(report.rows.some((row) => row.score === 1));
 assert.ok(report.rows.some((row) => row.score === 0));
 
+// Report pass: rows carry grader details and the report carries the
+// per-kind breakdown and staleSchemaUsed rate the charter requires.
+const byIdEarly = new Map(tasks.map((task) => [task.id, task]));
+assert.ok(report.rows.every((row) => row.details?.mutationKind === byIdEarly.get(row.taskId)?.metadata?.mutationKind));
+assert.ok(report.rows.every((row) => typeof row.details?.staleSchemaUsed === "boolean"));
+assert.deepEqual(Object.keys(report.perMutationKind).sort(), ["enumChange", "newRequired", "renamedField", "splitEndpoint", "typeChange"]);
+assert.equal(typeof report.staleSchemaUsedRate, "number");
+assert.ok(report.perMutationKind.enumChange.tasks === 12);
+
+const markdown = await execFile(process.execPath, ["dist/cli.js", "run", "--model", "offline", "--provider", "mock"]);
+assert.match(markdown.stdout, /## Schema mutation breakdown/);
+assert.match(markdown.stdout, /staleSchemaUsed rate: \d+\.\d%/);
+
 const probe = createNetServer();
 await new Promise((resolve) => probe.listen(0, "127.0.0.1", resolve));
 const address = probe.address(); assert.ok(address && typeof address === "object");
@@ -42,6 +55,8 @@ try {
   const shown = await get(`/v1/tasks/${first}`); assert.equal(shown.value.task.id, first);
   const score = await postScore(first, report.rows[0].submission);
   assert.equal(score.status, 200);
+  assert.equal(score.value.details?.mutationKind, tasks[0].metadata.mutationKind);
+  assert.equal(typeof score.value.details?.staleSchemaUsed, "boolean");
   assert.equal((await get("/v1/provenance")).response.status, 200);
   assert.equal((await get("/v1/index-entry")).value.task_count, tasks.length);
 
