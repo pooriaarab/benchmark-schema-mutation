@@ -80,7 +80,7 @@ Every task is synthetic, produced by the committed generator from 12 hand-author
 
 ```bash
 npm run generate:tasks                          # public split, seed 20261015
-node scripts/gen-tasks.mjs --seed 7 --split hidden   # held-out split, not committed
+node scripts/gen-tasks.mjs --seed 7 --split hidden   # held-out split, not committed (writes .hidden/)
 ```
 
 `data/PROVENANCE.md` records the licence (MIT), the hidden-split plan and the refresh cadence. Because the public split is committed, treat it as practice data; use a differently seeded hidden split for final comparisons.
