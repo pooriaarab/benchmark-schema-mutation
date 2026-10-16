@@ -249,6 +249,17 @@ try {
   const refused = await client.callTool({ name: "list_tasks", arguments: { tasks: "/etc/passwd" } });
   assert.equal(refused.isError, true);
   graderPasses.mcp_alternate_tasks = 3;
+  // MCP run pass: run_benchmark accepts the mock provider, honours tasks, and
+  // reports the same per-kind breakdown and stale rate as the CLI and API.
+  const mcpRun = await client.callTool({ name: "run_benchmark", arguments: { model: "offline", provider: "mock" } });
+  assert.notEqual(mcpRun.isError, true);
+  const mcpReport = JSON.parse(mcpRun.content[0].text);
+  assert.equal(mcpReport.rows.length, tasks.length);
+  assert.deepEqual(Object.keys(mcpReport.perMutationKind).sort(), ["enumChange", "newRequired", "renamedField", "splitEndpoint", "typeChange"]);
+  assert.equal(typeof mcpReport.staleSchemaUsedRate, "number");
+  const mcpAlt = await client.callTool({ name: "run_benchmark", arguments: { model: "offline", provider: "mock", tasks: hiddenAbs } });
+  assert.ok(JSON.parse(mcpAlt.content[0].text).rows.every((row) => row.taskId.startsWith("smh-")), "MCP run_benchmark ignored the tasks argument");
+  graderPasses.mcp_run_breakdown = 4;
 } finally { await client.close(); }
 
 // SDK pass: non-string answers reach the grader through score(), not the API.

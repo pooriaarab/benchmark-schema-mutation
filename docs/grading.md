@@ -88,6 +88,8 @@ call in a `tool_calls` array wins, matching the last-object-wins rule below.
 - `0` with a diff reason — otherwise; the reason names the first differing
   path (`name`, `arguments.<field>` missing, unexpected, or value mismatch).
 
-Per-mutation-kind breakdowns and the stale rate are computed by the e2e gate
-from `task.metadata.mutationKind` plus the row reasons, and written to
+Per-mutation-kind breakdowns and the stale rate ride on every run report
+(`perMutationKind`, `staleSchemaUsedRate`, and per-row `details`) on the
+CLI, SDK, API and MCP surfaces. The e2e gate recomputes them independently
+from `task.metadata.mutationKind` plus the row reasons and writes them to
 `artifacts/e2e-report.json`.
