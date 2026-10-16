@@ -1,0 +1,19 @@
+# benchmark-schema-mutation
+
+> Tool schemas change. Does the model call the current one?
+
+Package: https://www.npmjs.com/package/benchmark-schema-mutation
+Repository: https://github.com/pooriaarab/benchmark-schema-mutation
+Directory: https://aibenchmarkindex.com/benchmarks/benchmark-schema-mutation
+
+## Exports
+
+The root exports `benchmark`, `run`, and `score`. `benchmark-schema-mutation/api` exports the fetch-style `handler`. `benchmark-schema-mutation/mcp` exports MCP builders.
+
+## Commands
+
+The CLI supports list, show, run, score, card, provenance, index-entry, serve, and mcp. Use the mock provider for offline verification.
+
+## Verification
+
+Run `npm run ci:local`. The report is `artifacts/e2e-report.json`.
