@@ -1,5 +1,7 @@
 # benchmark-schema-mutation
 
+Paper: [10.5281/zenodo.23752423](https://doi.org/10.5281/zenodo.23752423)
+
 [![npm](https://img.shields.io/npm/v/benchmark-schema-mutation)](https://www.npmjs.com/package/benchmark-schema-mutation) [![downloads](https://img.shields.io/npm/dm/benchmark-schema-mutation)](https://www.npmjs.com/package/benchmark-schema-mutation) [![license](https://img.shields.io/npm/l/benchmark-schema-mutation)](./LICENSE) [![types](https://img.shields.io/badge/TypeScript-types-3178c6)](#sdk)
 
 [AI Benchmark Index](https://private-repo-337e.com/benchmarks/benchmark-schema-mutation) · [npm](https://www.npmjs.com/package/benchmark-schema-mutation) · [API](#http-api) · [MCP](#model-context-protocol)
