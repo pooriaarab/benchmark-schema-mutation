@@ -1,0 +1,577 @@
+{
+  "n": 60,
+  "families": 12,
+  "kinds": 5,
+  "baseline": {
+    "visible": {
+      "accuracy": {
+        "value": 1,
+        "low": 0.93982814785791,
+        "high": 0.9999999999999998,
+        "k": 60,
+        "n": 60
+      },
+      "stale": {
+        "value": 0,
+        "low": 0,
+        "high": 0.06017185214208986,
+        "k": 0,
+        "n": 60
+      }
+    },
+    "oracle": {
+      "accuracy": {
+        "value": 1,
+        "low": 0.93982814785791,
+        "high": 0.9999999999999998,
+        "k": 60,
+        "n": 60
+      },
+      "stale": {
+        "value": 0,
+        "low": 0,
+        "high": 0.06017185214208986,
+        "k": 0,
+        "n": 60
+      }
+    },
+    "stale": {
+      "accuracy": {
+        "value": 0,
+        "low": 0,
+        "high": 0.06017185214208986,
+        "k": 0,
+        "n": 60
+      },
+      "stale": {
+        "value": 1,
+        "low": 0.93982814785791,
+        "high": 0.9999999999999998,
+        "k": 60,
+        "n": 60
+      }
+    },
+    "empty": {
+      "accuracy": {
+        "value": 0,
+        "low": 0,
+        "high": 0.06017185214208986,
+        "k": 0,
+        "n": 60
+      },
+      "stale": {
+        "value": 0,
+        "low": 0,
+        "high": 0.06017185214208986,
+        "k": 0,
+        "n": 60
+      }
+    },
+    "noop": {
+      "accuracy": {
+        "value": 0,
+        "low": 0,
+        "high": 0.06017185214208986,
+        "k": 0,
+        "n": 60
+      },
+      "stale": {
+        "value": 0,
+        "low": 0,
+        "high": 0.06017185214208986,
+        "k": 0,
+        "n": 60
+      }
+    },
+    "refuse": {
+      "accuracy": {
+        "value": 0,
+        "low": 0,
+        "high": 0.06017185214208986,
+        "k": 0,
+        "n": 60
+      },
+      "stale": {
+        "value": 0,
+        "low": 0,
+        "high": 0.06017185214208986,
+        "k": 0,
+        "n": 60
+      }
+    },
+    "echo": {
+      "accuracy": {
+        "value": 0,
+        "low": 0,
+        "high": 0.06017185214208986,
+        "k": 0,
+        "n": 60
+      },
+      "stale": {
+        "value": 0,
+        "low": 0,
+        "high": 0.06017185214208986,
+        "k": 0,
+        "n": 60
+      }
+    },
+    "first": {
+      "accuracy": {
+        "value": 0,
+        "low": 0,
+        "high": 0.06017185214208986,
+        "k": 0,
+        "n": 60
+      },
+      "stale": {
+        "value": 0,
+        "low": 0,
+        "high": 0.06017185214208986,
+        "k": 0,
+        "n": 60
+      }
+    }
+  },
+  "coverage": [
+    {
+      "kind": "renamedField",
+      "n": 12
+    },
+    {
+      "kind": "newRequired",
+      "n": 12
+    },
+    {
+      "kind": "enumChange",
+      "n": 12
+    },
+    {
+      "kind": "splitEndpoint",
+      "n": 12
+    },
+    {
+      "kind": "typeChange",
+      "n": 12
+    }
+  ],
+  "paired": {
+    "value": 1,
+    "low": 1,
+    "high": 1,
+    "draws": 2000,
+    "seed": 20261029
+  },
+  "sweep": [
+    {
+      "simulated": true,
+      "q": 0,
+      "layer": "pass",
+      "agents": 100,
+      "score": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "stale": {
+        "value": 1,
+        "low": 1,
+        "high": 1,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "blocked": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "proposedStale": {
+        "value": 1,
+        "low": 1,
+        "high": 1,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "accuracyDifference": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      }
+    },
+    {
+      "simulated": true,
+      "q": 0,
+      "layer": "validate",
+      "agents": 100,
+      "score": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "stale": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "blocked": {
+        "value": 1,
+        "low": 1,
+        "high": 1,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "proposedStale": {
+        "value": 1,
+        "low": 1,
+        "high": 1,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "accuracyDifference": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      }
+    },
+    {
+      "simulated": true,
+      "q": 0.25,
+      "layer": "pass",
+      "agents": 100,
+      "score": {
+        "value": 0.2633333333333333,
+        "low": 0.2524999999999999,
+        "high": 0.2753333333333333,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "stale": {
+        "value": 0.7366666666666665,
+        "low": 0.7246666666666668,
+        "high": 0.7475000000000003,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "blocked": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "proposedStale": {
+        "value": 0.7366666666666665,
+        "low": 0.7246666666666668,
+        "high": 0.7475000000000003,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "accuracyDifference": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      }
+    },
+    {
+      "simulated": true,
+      "q": 0.25,
+      "layer": "validate",
+      "agents": 100,
+      "score": {
+        "value": 0.2633333333333333,
+        "low": 0.2524999999999999,
+        "high": 0.2753333333333333,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "stale": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "blocked": {
+        "value": 0.7366666666666665,
+        "low": 0.7246666666666668,
+        "high": 0.7475000000000003,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "proposedStale": {
+        "value": 0.7366666666666665,
+        "low": 0.7246666666666668,
+        "high": 0.7475000000000003,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "accuracyDifference": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      }
+    },
+    {
+      "simulated": true,
+      "q": 0.5,
+      "layer": "pass",
+      "agents": 100,
+      "score": {
+        "value": 0.5203333333333334,
+        "low": 0.5083333333333335,
+        "high": 0.5323333333333333,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "stale": {
+        "value": 0.4796666666666667,
+        "low": 0.4678333333333331,
+        "high": 0.4916666666666666,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "blocked": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "proposedStale": {
+        "value": 0.4796666666666667,
+        "low": 0.4678333333333331,
+        "high": 0.4916666666666666,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "accuracyDifference": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      }
+    },
+    {
+      "simulated": true,
+      "q": 0.5,
+      "layer": "validate",
+      "agents": 100,
+      "score": {
+        "value": 0.5203333333333334,
+        "low": 0.5083333333333335,
+        "high": 0.5323333333333333,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "stale": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "blocked": {
+        "value": 0.4796666666666667,
+        "low": 0.4678333333333331,
+        "high": 0.4916666666666666,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "proposedStale": {
+        "value": 0.4796666666666667,
+        "low": 0.4678333333333331,
+        "high": 0.4916666666666666,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "accuracyDifference": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      }
+    },
+    {
+      "simulated": true,
+      "q": 0.75,
+      "layer": "pass",
+      "agents": 100,
+      "score": {
+        "value": 0.7631666666666667,
+        "low": 0.7519999999999996,
+        "high": 0.7743333333333331,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "stale": {
+        "value": 0.23683333333333323,
+        "low": 0.22566666666666657,
+        "high": 0.24816666666666656,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "blocked": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "proposedStale": {
+        "value": 0.23683333333333323,
+        "low": 0.22566666666666657,
+        "high": 0.24816666666666656,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "accuracyDifference": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      }
+    },
+    {
+      "simulated": true,
+      "q": 0.75,
+      "layer": "validate",
+      "agents": 100,
+      "score": {
+        "value": 0.7631666666666667,
+        "low": 0.7519999999999996,
+        "high": 0.7743333333333331,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "stale": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "blocked": {
+        "value": 0.23683333333333323,
+        "low": 0.22566666666666657,
+        "high": 0.24816666666666656,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "proposedStale": {
+        "value": 0.23683333333333323,
+        "low": 0.22566666666666657,
+        "high": 0.24816666666666656,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "accuracyDifference": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      }
+    },
+    {
+      "simulated": true,
+      "q": 1,
+      "layer": "pass",
+      "agents": 100,
+      "score": {
+        "value": 1,
+        "low": 1,
+        "high": 1,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "stale": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "blocked": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "proposedStale": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "accuracyDifference": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      }
+    },
+    {
+      "simulated": true,
+      "q": 1,
+      "layer": "validate",
+      "agents": 100,
+      "score": {
+        "value": 1,
+        "low": 1,
+        "high": 1,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "stale": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "blocked": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "proposedStale": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      },
+      "accuracyDifference": {
+        "value": 0,
+        "low": 0,
+        "high": 0,
+        "draws": 2000,
+        "seed": 20261029
+      }
+    }
+  ],
+  "freeModels": "Not configured; availability untested; no learned-model scores."
+}

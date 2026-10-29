@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "title": "Schema Mutation: Measuring Tool Calls After Interface Changes",
+  "abstract": "Tool interfaces change while familiar call patterns remain. Schema Mutation measures whether a call follows the current interface after a migration. The benchmark crosses 12 tool families with 5 mutation types, yielding 60 public tasks. A prompt-only scripted solver achieves 100.0% accuracy (95% Wilson interval 94.0-100.0%). Empty, constant, refusal, echo, and first-tool controls score 0.0% (0.0-6.0%). Exact stale calls fail and receive a separate diagnostic. A simulated population sweep compares pass-through with schema validation. At adherence q=0.5, simulated accuracy is 52.0% (agent-bootstrap interval 50.8-53.2%) under both layers. Validation blocks stale proposals without improving completion. These are scripted and simulated results, not learned-model evaluations. The study supports measurement checks on a synthetic public task set; it does not establish deployment reliability or identify memorization as a cause.",
+  "authors": [
+    {
+      "name": "Pooria Arab",
+      "affiliation": "Independent researcher",
+      "orcid": "https://orcid.org/0009-0005-9964-6841"
+    }
+  ],
+  "license": "CC-BY-4.0",
+  "keywords": [
+    "tool use",
+    "schema migration",
+    "benchmark",
+    "simulated controls"
+  ],
+  "code_url": "https://github.com/pooriaarab/benchmark-schema-mutation",
+  "artifact_name": "schema-mutation-paper.pdf"
+}
